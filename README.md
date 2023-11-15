@@ -21,7 +21,7 @@ To get started with Canvas LMS Connector, follow these steps:
 
 ## Documentation
 
-For detailed documentation on how to use Canvas Learning, refer to the [official documentation](https://docs.rs/canvas_lms_connector/0.1.0/canvas_lms_connector/).
+For detailed documentation on how to use Canvas Learning, refer to the [official documentation](https://crates.io/crates/canvas_lms_connector).
 
 
 ## License
