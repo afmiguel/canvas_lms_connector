@@ -1,0 +1,16 @@
+[package]
+name = "canvas_lms_connector"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "This library provides a range of functionalities for interacting with the Canvas Learning Management System API."
+
+[dependencies]
+serde = { version = "1.0.190", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0.1"
+keyring = "2.0.5"
+reqwest = { version = "0.11", features = ["blocking", "json", "multipart"] }
+chrono = { version = "0.4", features = ["serde"] }
+lazy_static = "1.4.0"
+std-semaphore = "0.1.0"
