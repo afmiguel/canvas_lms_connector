@@ -1,6 +1,6 @@
-# Canvas Learning
+# Canvas LMS Connector
 
-Canvas Learning is a comprehensive educational platform designed to streamline the learning process for students and instructors. This project provides a set of APIs and tools to integrate with Canvas Learning and enhance the educational experience.
+Canvas LMS Connector is a comprehensive educational platform designed to streamline the learning process for students and instructors. This project provides a set of APIs and tools to integrate with Canvas Learning and enhance the educational experience.
 
 ## Features
 
@@ -12,12 +12,12 @@ Canvas Learning is a comprehensive educational platform designed to streamline t
 
 ## Getting Started
 
-To get started with Canvas Learning, follow these steps:
+To get started with Canvas LMS Connector, follow these steps:
 
 1. Clone this repository.
-2. Configure your API credentials.
-3. Install the required dependencies.
-4. Start building your educational applications with Canvas Learning!
+2. Install the required dependencies.
+3. At the first run, you will be prompted to enter your Canvas Learning API key. You can find your API key in your Canvas Learning account settings.
+4. Start building your educational applications with Canvas LMS Connector!
 
 ## Documentation
 

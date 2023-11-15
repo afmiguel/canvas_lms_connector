@@ -21,10 +21,39 @@
 //! canvas_lms_connector = "0.1.1"
 //! ```
 //!
-//! After adding the dependency, you can start using the library's features in your code. Refer to the examples
-//! included in the documentation of each structure and function for a better understanding of how to use this package.
+//! After adding the dependency, you can start using the library's features in your code.
 //!
-//! ```text
+//! The entry point is the function `fetch_courses`, which can be used to retrieve courses.
+//! The function takes a closure as an argument, which is used to specify the type of course retrieval.
+//! The closure should take a reference to `CanvasInfo` and return a `CanvasResult`.
+//! The `CanvasResult` enum encapsulates the possible outcomes of the operation, including successful
+//! retrieval of courses or various types of errors.
+//! The `fetch_courses` function handles credential management and error handling, while the closure
+//! specifies the specific course retrieval logic.
+//! This approach allows for flexibility in the way courses are retrieved, while ensuring that the
+//! authentication and error handling are handled in a consistent way.
+//!
+//! The following example demonstrates the usage of `fetch_courses` to retrieve courses using
+//! credentials stored in the system keyring.
+//!
+//! # Examples
+//!
+//! ```
+//! match Canvas::fetch_courses(|credential| Canvas::fetch_courses_with_credentials(credential)) {
+//!     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
+//!     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
+//!     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+//! }
+//! ```
+//! or
+//!  ```
+//! let course_id = 123;
+//! match Canvas::fetch_courses(|credential| Canvas::fetch_single_course_with_credentials(credential, course_id)) {
+//!     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
+//!     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
+//!     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+//! }
+//! ```
 use chrono::{DateTime, Utc};
 use keyring::Entry;
 use lazy_static::lazy_static;
@@ -431,8 +460,16 @@ impl Canvas {
     /// # Examples
     ///
     /// ```
-    /// let fetch_logic = |info: &CanvasInfo| { /* custom logic to fetch courses */ };
-    /// match fetch_courses(fetch_logic) {
+    /// match Canvas::fetch_courses(|credential| Canvas::fetch_courses_with_credentials(credential)) {
+    ///     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
+    ///     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
+    ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+    /// }
+    /// ```
+    /// or
+    ///  ```
+    /// let course_id = 123;
+    /// match Canvas::fetch_courses(|credential| Canvas::fetch_single_course_with_credentials(credential, course_id)) {
     ///     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
     ///     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
     ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
@@ -720,7 +757,7 @@ impl Course {
     /// # Examples
     ///
     /// ```
-    /// let course = Course { /* fields initialization */ };
+    /// let course = Course { /* fields initialization - see Canvas::fetch_courses */ };
     /// match course.fetch_students() {
     ///     Ok(students) => println!("Students: {:?}", students),
     ///     Err(e) => eprintln!("Error fetching students: {:?}", e),
@@ -845,7 +882,7 @@ impl Course {
     /// # Examples
     ///
     /// ```
-    /// let course = Course { /* fields initialization */ };
+    /// let course = Course { /* fields initialization - see Canvas::fetch_courses */ };
     /// match course.fetch_assignments() {
     ///     Ok(assignments) => println!("Assignments: {:?}", assignments),
     ///     Err(e) => eprintln!("Error fetching assignments: {:?}", e),
@@ -1257,6 +1294,8 @@ impl Student {
 ///
 /// The structure plays a vital role in the digital workflow of assignments, enabling effective tracking
 /// and assessment of student performance in the Canvas environment.
+///
+/// See also: fetch_submissions_for_assignments, fetch_assignments_and_latest_submissions
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Submission {
     pub id: u64,
