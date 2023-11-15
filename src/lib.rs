@@ -18,7 +18,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! canvas_api_lib = "0.1.0"
+//! canvas_lms_connector = "0.1.1"
 //! ```
 //!
 //! After adding the dependency, you can start using the library's features in your code. Refer to the examples
@@ -257,7 +257,6 @@ pub struct Canvas {
     // info: Arc<CanvasInfo>,
 }
 
-
 /// Implementation of Canvas struct functionalities.
 ///
 /// Provides methods to interact with the Canvas Learning Management System (LMS),
@@ -274,7 +273,6 @@ pub struct Canvas {
 /// Each method focuses on a specific aspect of Canvas LMS interaction, ensuring ease of use
 /// in various application contexts.
 impl Canvas {
-
     /// Fetches a list of courses from the Canvas API using the provided credentials.
     ///
     /// This function attempts to retrieve all courses accessible with the given Canvas credentials.
@@ -351,7 +349,6 @@ impl Canvas {
         CanvasResult::Ok(all_courses)
     }
 
-
     /// Fetches details of a specific course from the Canvas API using provided credentials.
     ///
     /// This function retrieves information about a single course, identified by `course_id`, using the credentials
@@ -411,7 +408,6 @@ impl Canvas {
         }
     }
 
-
     /// Fetches a list of courses using a provided function for specific fetching logic.
     ///
     /// This higher-order function takes another function `f` as an argument, which contains the logic for fetching courses.
@@ -443,8 +439,8 @@ impl Canvas {
     /// }
     /// ```
     pub fn fetch_courses<F>(f: F) -> CanvasResult
-        where
-            F: FnOnce(&CanvasInfo) -> CanvasResult + Copy,
+    where
+        F: FnOnce(&CanvasInfo) -> CanvasResult + Copy,
     {
         let app_name = env!("CARGO_PKG_NAME");
         match Canvas::load_credentials_from_file() {
@@ -508,7 +504,6 @@ impl Canvas {
         }
     }
 
-
     /// Converts a JSON object to a `Course` structure.
     ///
     /// This function takes a JSON representation of a course, typically obtained from the Canvas API,
@@ -550,7 +545,6 @@ impl Canvas {
             }),
         })
     }
-
 
     /// Loads Canvas credentials from a configuration file.
     ///
@@ -673,7 +667,6 @@ pub struct CourseInfo {
     pub canvas_info: Arc<CanvasInfo>,
 }
 
-
 /// Represents a course within the Canvas Learning Management System.
 ///
 /// This structure encapsulates data about a specific course, primarily through the `CourseInfo` struct,
@@ -711,7 +704,6 @@ pub struct Course {
 /// These methods are essential for applications that require detailed interaction with courses in the
 /// Canvas system, such as retrieving student lists, managing assignments, and processing grades.
 impl Course {
-
     /// Fetches a list of students enrolled in the course.
     ///
     /// This method queries the Canvas API to retrieve students associated with the course
@@ -792,7 +784,6 @@ impl Course {
 
         Ok(all_students)
     }
-
 
     /// Converts a JSON object to a `Student` structure.
     ///
@@ -954,7 +945,6 @@ impl Course {
         })
     }
 
-
     /// Updates the score for a specific assignment submission.
     ///
     /// This method allows updating the score of a student's submission for a particular assignment.
@@ -1033,7 +1023,6 @@ impl Course {
     }
 }
 
-
 /// Contains detailed information about a student in the Canvas system.
 ///
 /// This structure is used to store and handle specific data related to a student within a Canvas course.
@@ -1059,7 +1048,6 @@ pub struct StudentInfo {
     pub course_info: Arc<CourseInfo>,
 }
 
-
 /// Represents a student within the Canvas Learning Management System.
 ///
 /// This structure encapsulates information about a student enrolled in a course. It primarily contains
@@ -1078,7 +1066,6 @@ pub struct Student {
     pub info: Arc<StudentInfo>,
 }
 
-
 /// Implementation block for the `Student` struct.
 ///
 /// Provides methods to interact with student-specific data and functionalities in the Canvas Learning
@@ -1096,7 +1083,6 @@ pub struct Student {
 /// These methods are crucial for applications that require detailed interaction with student data in the
 /// Canvas system, such as tracking assignment submissions and managing academic records.
 impl Student {
-
     /// Fetches submissions for a given set of assignments for the student.
     ///
     /// This method queries the Canvas API to obtain submissions made by the student for specified assignments.
@@ -1139,8 +1125,8 @@ impl Student {
         assignment_ids: &[u64],
         interaction: F,
     ) -> Result<Vec<Submission>, Box<dyn std::error::Error>>
-        where
-            F: Fn(),
+    where
+        F: Fn(),
     {
         let canvas_base_url = &self.info.course_info.canvas_info.url_canvas;
         let mut submissions = Vec::new();
@@ -1221,8 +1207,8 @@ impl Student {
         assignments: Arc<Vec<Assignment>>,
         interaction: F,
     ) -> Result<HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)>, Box<dyn std::error::Error>>
-        where
-            F: Fn(),
+    where
+        F: Fn(),
     {
         let assignment_ids: Vec<u64> = assignments
             .iter()
@@ -1254,7 +1240,6 @@ impl Student {
     }
 }
 
-
 /// Represents a student's submission for an assignment in the Canvas Learning Management System.
 ///
 /// This structure contains detailed information about a specific submission made by a student for an assignment.
@@ -1282,7 +1267,6 @@ pub struct Submission {
     pub student: Arc<StudentInfo>,
 }
 
-
 /// Contains detailed information about an assignment in the Canvas system.
 ///
 /// This structure is used to store and manage data specific to an assignment within a Canvas course.
@@ -1307,7 +1291,6 @@ pub struct AssignmentInfo {
     #[serde(skip)]
     pub course_info: Arc<CourseInfo>,
 }
-
 
 /// Represents an assignment within the Canvas Learning Management System.
 ///
