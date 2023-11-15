@@ -21,12 +21,14 @@ To get started with Canvas Learning, follow these steps:
 
 ## Documentation
 
-For detailed documentation on how to use Canvas Learning, refer to the [official documentation](https://canvas-learning-docs.example.com).
+For detailed documentation on how to use Canvas Learning, refer to the [official documentation](https://docs.rs/canvas_lms_connector/0.1.0/canvas_lms_connector/).
 
-## Contributing
+[//]: # (## Contributing)
 
-Contributions to Canvas Learning are welcome! Please read our [contribution guidelines](CONTRIBUTING.md) for more information on how to contribute to this project.
+[//]: # (Contributions to Canvas Learning are welcome! Please read our [contribution guidelines]&#40;CONTRIBUTING.md&#41; for more information on how to contribute to this project.)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License
+
+[//]: # (- see the [LICENSE]&#40;LICENSE&#41; file for details.)
