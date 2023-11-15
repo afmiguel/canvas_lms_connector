@@ -18,7 +18,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! canvas_lms_connector = "0.1.1"
+//! canvas_lms_connector = "0.1.2"
 //! ```
 //!
 //! After adding the dependency, you can start using the library's features in your code.
