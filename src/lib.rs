@@ -61,6 +61,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
+use std::process::exit;
 use std::sync::Arc;
 use std::{thread, time::Duration};
 use std_semaphore::Semaphore;
@@ -90,23 +91,13 @@ const SIMULTANEOUS_REQUESTS_LIMIT: isize = 30;
 ///
 /// This enum is critical for constructing and sending different types of HTTP requests,
 /// allowing for flexibility and specificity in how data is communicated to a server.
+#[derive(Clone)]
 enum HttpMethod {
     Get,
     Put(serde_json::Value),
 }
 
-/// Type alias for the result of an HTTP request.
-///
-/// This type is a shorthand for the `Result` type specialized for HTTP requests made using
-/// the `reqwest` crate's blocking client. It simplifies the handling of responses and errors
-/// from HTTP requests.
-///
-/// The `Ok` variant of this type contains a `reqwest::blocking::Response`, which represents
-/// the response received from the HTTP request. The `Err` variant contains a boxed error
-/// (`Box<dyn std::error::Error>`), which allows for error flexibility and can represent a variety
-/// of errors that might occur during an HTTP request, such as connection issues, timeout errors,
-/// or other request-related errors.
-type HttpRequestResult = Result<reqwest::blocking::Response, Box<dyn std::error::Error>>;
+type HttpRequestResult = Result<reqwest::blocking::Response, u16>;
 
 // A global semaphore for managing simultaneous HTTP requests.
 //
@@ -125,32 +116,32 @@ lazy_static! {
     static ref SEMAPHORE: Semaphore = Semaphore::new(SIMULTANEOUS_REQUESTS_LIMIT);
 }
 
-/// Sends an HTTP request using the specified parameters.
-///
-/// This function handles the logic of sending an HTTP request based on the provided method, URL,
-/// and additional parameters. It utilizes the `reqwest::blocking::Client` for HTTP request execution.
-/// The function supports retrying requests and managing the rate of requests using a semaphore.
-///
-/// # Arguments
-///
-/// * `client` - A reference to the `reqwest::blocking::Client` for executing HTTP requests.
-/// * `method` - The HTTP method (`HttpMethod`) to be used for the request.
-/// * `url` - The URL endpoint to which the request will be sent.
-/// * `canvas_info` - A reference to the `CanvasInfo` containing authentication token.
-/// * `params` - A vector of key-value pairs for query parameters or body content.
-///
-/// # Errors
-///
-/// Returns an error if the request fails after the maximum number of attempts or encounters
-/// issues like connection errors, time-outs, etc.
-///
-/// # Examples
-///
-/// ```
-/// // Example usage of send_http_request
-/// let client = reqwest::blocking::Client::new();
-/// let result = send_http_request(&client, HttpMethod::Get, "https://example.com", &canvas_info, params);
-/// ```
+fn send_http_request_single_try(
+    client: &reqwest::blocking::Client,
+    method: HttpMethod,
+    url: &str,
+    canvas_info: &CanvasInfo,
+    params: Vec<(String, String)>,
+) -> HttpRequestResult {
+    let request_builder = match &method {
+        HttpMethod::Get => client
+            .get(url)
+            .bearer_auth(&canvas_info.token_canvas)
+            .query(&params),
+        HttpMethod::Put(body) => client
+            .put(url)
+            .bearer_auth(&canvas_info.token_canvas)
+            .json(body),
+    };
+
+    let response = request_builder.send();
+
+    match response {
+        Ok(response) if response.status().is_success() => Ok(response),
+        Ok(response) => Err(response.status().as_u16()),
+        Err(_) => Err(0), // Código genérico para erros de rede ou de cliente HTTP
+    }
+}
 
 fn send_http_request(
     client: &reqwest::blocking::Client,
@@ -159,60 +150,21 @@ fn send_http_request(
     canvas_info: &CanvasInfo,
     params: Vec<(String, String)>,
 ) -> HttpRequestResult {
-    let mut last_error: Option<Box<dyn std::error::Error>> = None;
-    let max_attempts = 3;
     let mut attempts = 0;
+    let max_attempts = 3;
 
     while attempts < max_attempts {
-        attempts += 1;
-
-        // Adquirir o semáforo imediatamente antes da tentativa
-        SEMAPHORE.acquire();
-
-        let request_builder = match &method {
-            HttpMethod::Get => client
-                .get(url)
-                .bearer_auth(&canvas_info.token_canvas)
-                .query(&params),
-            HttpMethod::Put(body) => client
-                .put(url)
-                .bearer_auth(&canvas_info.token_canvas)
-                .json(body),
-        };
-
-        let response = request_builder.send();
-
-        // Liberar o semáforo imediatamente após a tentativa
-        SEMAPHORE.release();
-
-        match response {
-            Ok(response) if response.status().is_success() => return Ok(response),
-            Ok(response) => {
-                let status = response.status();
-                last_error = Some(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Request failed with status: {}", status),
-                )));
+        match send_http_request_single_try(client, method.clone(), url, canvas_info, params.clone())
+        {
+            Ok(response) => return Ok(response),
+            Err(status) if status == 403 && attempts < max_attempts - 1 => {
+                attempts += 1;
+                thread::sleep(Duration::from_millis(500));
             }
-            Err(e) => {
-                // Converte reqwest::Error em um Box<dyn std::error::Error>
-                last_error = Some(Box::new(e) as Box<dyn std::error::Error>);
-            }
-        }
-
-        // Aguardar entre as tentativas, se ainda houver tentativas restantes
-        if attempts < max_attempts {
-            thread::sleep(Duration::from_millis(100));
+            Err(status) => return Err(status),
         }
     }
-
-    // Se todas as tentativas falharem, retorna o último erro
-    Err(last_error.unwrap_or_else(|| {
-        Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Failed after 3 attempts",
-        )) as Box<dyn std::error::Error>
-    }))
+    Err(403) // Retorna 403 se todas as tentativas falharem
 }
 
 /// Represents the possible outcomes of operations interacting with the Canvas system.
@@ -266,6 +218,63 @@ pub struct CanvasInfo {
     pub token_canvas: String,
 }
 
+enum CanvasCredentials {
+    None,
+    File(CanvasInfo),
+    System(CanvasInfo),
+}
+
+fn get_canvas_credentials() -> CanvasCredentials {
+    let app_name = env!("CARGO_PKG_NAME");
+    // Inicialmente, tenta carregar as credenciais do arquivo
+    match Canvas::load_credentials_from_file() {
+        Ok(credentials_ok) => {
+            return CanvasCredentials::File(credentials_ok);
+        }
+        Err(_) => {
+            // Se não for possível carregar do arquivo, tenta carregar do sistema
+            match Canvas::load_credentials_from_system() {
+                Ok(credentials_ok) => {
+                    return CanvasCredentials::System(credentials_ok);
+                }
+                Err(_) => {
+                    // Se não for possível carregar do sistema, tenta registrar as credenciais
+                    loop {
+                        println!("Do you wish to register the credentials? You can find your API key in your Canvas Learning account settings. (y/n)");
+                        let mut input = String::new();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        if input.trim().to_uppercase() != "Y" {
+                            return CanvasCredentials::None;
+                        }
+                        println!("Enter the Canvas URL:");
+                        input.clear();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        let url = input.trim().to_string();
+                        println!("Enter the Canvas token:");
+                        input.clear();
+                        std::io::stdin().read_line(&mut input).unwrap();
+                        let token = input.trim().to_string();
+
+                        // Update the credentials
+                        if let Err(e) = Entry::new(app_name, "URL_CANVAS")
+                            .unwrap()
+                            .set_password(url.as_str())
+                        {
+                            eprintln!("Error saving URL: {}", e);
+                        }
+                        if let Err(e) = Entry::new(app_name, "TOKEN_CANVAS")
+                            .unwrap()
+                            .set_password(token.as_str())
+                        {
+                            eprintln!("Error saving token: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Represents the main interface for interacting with the Canvas Learning Management System (LMS).
 ///
 /// This structure provides methods for performing various operations related to the Canvas LMS,
@@ -302,6 +311,153 @@ pub struct Canvas {
 /// Each method focuses on a specific aspect of Canvas LMS interaction, ensuring ease of use
 /// in various application contexts.
 impl Canvas {
+    fn test_canvas_credentials(api_url: &str, access_token: &str) -> Result<u16, u16> {
+        let client = reqwest::blocking::Client::new();
+        let res = client
+            .get(format!("{}/users/self",api_url))
+            .header("Authorization", format!("Bearer {}", access_token))
+            .send();
+
+        match res {
+            Ok(response) => {
+                if response.status().is_success() {
+                    Ok(200)
+                } else {
+                    Err(response.status().as_u16())
+                }
+            }
+            Err(_) => Err(0), // Código genérico para erros de rede ou de cliente HTTP
+        }
+    }
+
+    fn load_credentials() -> CanvasCredentials {
+        // Inicialmente, tenta carregar as credenciais do arquivo
+        match Canvas::load_credentials_from_file() {
+            Ok(credentials_ok) => {
+                return CanvasCredentials::File(credentials_ok);
+            }
+            Err(_) => {
+                // Se não for possível carregar do arquivo, tenta carregar do sistema
+                match Canvas::load_credentials_from_system() {
+                    Ok(credentials_ok) => {
+                        return CanvasCredentials::System(credentials_ok);
+                    }
+                    Err(_) => {
+                        return CanvasCredentials::None;
+                    }
+                }
+            }
+        }
+    }
+
+    fn set_system_credentials() -> CanvasCredentials {
+        let app_name = env!("CARGO_PKG_NAME");
+        loop {
+            println!("Do you wish to register the credentials? You can find your API key in your Canvas Learning account settings. (y/n)");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+            if input.trim().to_uppercase() != "Y" {
+                return CanvasCredentials::None;
+            }
+            println!("Enter the Canvas URL:");
+            input.clear();
+            std::io::stdin().read_line(&mut input).unwrap();
+            let url = input.trim().to_string();
+            println!("Enter the Canvas token:");
+            input.clear();
+            std::io::stdin().read_line(&mut input).unwrap();
+            let token = input.trim().to_string();
+
+            // Update the credentials
+            if let Err(e) = Entry::new(app_name, "URL_CANVAS")
+                .unwrap()
+                .set_password(url.as_str())
+            {
+                eprintln!("Error saving URL: {}", e);
+            }
+            if let Err(e) = Entry::new(app_name, "TOKEN_CANVAS")
+                .unwrap()
+                .set_password(token.as_str())
+            {
+                eprintln!("Error saving token: {}", e);
+            }
+            match Canvas::test_canvas_credentials(url.as_str(), token.as_str()) {
+                Ok(_) => {
+                    return CanvasCredentials::System(CanvasInfo {
+                        url_canvas: url,
+                        token_canvas: token,
+                    });
+                }
+                Err(status_code) if status_code == 401 || status_code == 403 => {
+                    println!("Incorrect credentials");
+                }
+                Err(status_code) => {
+                    println!("Error accessing Canvas API - Status Code {}", status_code);
+                    exit(1);
+                }
+            }
+        }
+    }
+
+    pub fn credentials() -> CanvasInfo {
+        match Canvas::load_credentials() {
+            CanvasCredentials::None => match Canvas::set_system_credentials() {
+                CanvasCredentials::System(credentials) => {
+                    return credentials;
+                }
+                _ => {
+                    println!("Error obtaining credentials");
+                    exit(1);
+                }
+            },
+            CanvasCredentials::File(credentials) => {
+                match Canvas::test_canvas_credentials(
+                    credentials.url_canvas.as_str(),
+                    credentials.token_canvas.as_str(),
+                ) {
+                    Ok(_) => {
+                        return CanvasInfo {
+                            url_canvas: credentials.url_canvas,
+                            token_canvas: credentials.token_canvas,
+                        };
+                    }
+                    Err(e) => {
+                        println!("Error accessing Canvas API - Status Code {}", e);
+                        exit(1);
+                    }
+                }
+            }
+            CanvasCredentials::System(credentials) => {
+                match Canvas::test_canvas_credentials(
+                    credentials.url_canvas.as_str(),
+                    credentials.token_canvas.as_str(),
+                ) {
+                    Ok(_) => {
+                        return CanvasInfo {
+                            url_canvas: credentials.url_canvas,
+                            token_canvas: credentials.token_canvas,
+                        };
+                    }
+                    Err(status_code) if status_code == 401 || status_code == 403 => {
+                        match Canvas::set_system_credentials() {
+                            CanvasCredentials::System(credentials) => {
+                                return credentials;
+                            }
+                            _ => {
+                                println!("Error obtaining credentials");
+                                exit(1);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("Error accessing Canvas API - Status Code {}", e);
+                        exit(1);
+                    }
+                }
+            }
+        }
+    }
+
     /// Fetches a list of courses from the Canvas API using the provided credentials.
     ///
     /// This function attempts to retrieve all courses accessible with the given Canvas credentials.
@@ -475,7 +631,7 @@ impl Canvas {
     ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
     /// }
     /// ```
-    pub fn fetch_courses<F>(f: F) -> CanvasResult
+    pub fn fetch_courses_<F>(f: F) -> CanvasResult
     where
         F: FnOnce(&CanvasInfo) -> CanvasResult + Copy,
     {
@@ -504,7 +660,7 @@ impl Canvas {
                             println!("Error obtaining credentials");
                         }
                     }
-                    println!("Do you wish to re-register the credentials? (y/n)");
+                    println!("Do you wish to re-register the credentials? You can find your API key in your Canvas Learning account settings. (y/n)");
                     let mut input = String::new();
                     std::io::stdin().read_line(&mut input).unwrap();
                     if input.trim().to_uppercase() != "Y" {
@@ -788,37 +944,41 @@ impl Course {
                 .collect();
 
             // Passando HttpMethod::Get ao invés de "GET"
-            let response = send_http_request(
+            match send_http_request(
                 client,
                 HttpMethod::Get, // Supondo que HttpMethod::Get é um enum definido em algum lugar
                 &url,
                 &self.info.canvas_info,
                 converted_params, // Passando o Vec<(String, String)> diretamente
-            )?;
-
-            // Verifica o código de status e interrompe o loop ou processa os dados
-            if response.status() == reqwest::StatusCode::OK {
-                let students_page: Vec<serde_json::Value> = response.json()?;
-                if students_page.is_empty() {
-                    break; // Sai do loop se não há mais estudantes
+            ) {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let students_page: Vec<serde_json::Value> = response.json()?;
+                        if students_page.is_empty() {
+                            break; // Sai do loop se não há mais estudantes
+                        }
+                        all_students.extend(students_page.into_iter().filter_map(|student| {
+                            Course::convert_json_to_student(&self.info, &student)
+                        }));
+                        page += 1; // Incrementa o número da página para a próxima iteração
+                    } else {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!(
+                                "Failed to fetch students with status: {}",
+                                response.status()
+                            ),
+                        )));
+                    }
                 }
-                all_students.extend(
-                    students_page.into_iter().filter_map(|student| {
-                        Course::convert_json_to_student(&self.info, &student)
-                    }),
-                );
-                page += 1; // Incrementa o número da página para a próxima iteração
-            } else {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to fetch students with status: {}",
-                        response.status()
-                    ),
-                )));
+                Err(e) => {
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to fetch students with error: {}", e),
+                    )));
+                }
             }
         }
-
         Ok(all_students)
     }
 
@@ -904,37 +1064,43 @@ impl Course {
                 ("per_page".to_string(), "100".to_string()),
             ];
 
-            // Enviando a requisição GET
-            let response = send_http_request(
+            match send_http_request(
                 client,
                 HttpMethod::Get,
                 &url,
                 &self.info.canvas_info,
                 params,
-            )?;
-
-            // Verifique o sucesso da resposta e processe o JSON
-            if response.status().is_success() {
-                let assignments: Vec<serde_json::Value> = response.json()?;
-                if assignments.is_empty() {
-                    break; // Sai do loop se não há mais cursos
+            ) {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let assignments: Vec<serde_json::Value> = response.json()?;
+                        if assignments.is_empty() {
+                            break; // Sai do loop se não há mais cursos
+                        }
+                        let assignments = assignments
+                            .iter()
+                            .filter_map(|assignment| {
+                                Course::convert_json_to_assignment(&self.info, assignment)
+                            })
+                            .collect::<Vec<_>>();
+                        all_assignments.extend(assignments);
+                        page += 1; // Incrementa o número da página para a próxima iteração
+                    } else {
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!(
+                                "Failed to fetch assignments with status: {}",
+                                response.status()
+                            ),
+                        ))); // Retorna um erro
+                    }
                 }
-                let assignments = assignments
-                    .iter()
-                    .filter_map(|assignment| {
-                        Course::convert_json_to_assignment(&self.info, assignment)
-                    })
-                    .collect::<Vec<_>>();
-                all_assignments.extend(assignments);
-                page += 1; // Incrementa o número da página para a próxima iteração
-            } else {
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!(
-                        "Failed to fetch assignments with status: {}",
-                        response.status()
-                    ),
-                )));
+                Err(e) => {
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to fetch assignments with error: {}", e),
+                    ))); // Retorna um erro
+                }
             }
         }
         Ok(all_assignments)
@@ -1042,19 +1208,23 @@ impl Course {
             });
         }
 
-        let response = send_http_request(
+        match send_http_request(
             client,
             HttpMethod::Put(body), // Use HttpMethod::Put enum variant
             &url,
             &self.info.canvas_info,
             Vec::new(), // PUT request does not need params
-        )?;
-
-        match response.status().is_success() {
-            true => Ok(()),
-            false => Err(Box::new(std::io::Error::new(
+        ) {
+            Ok(response) => match response.status().is_success() {
+                true => Ok(()),
+                false => Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!("Failed to update score with status: {}", response.status()),
+                ))),
+            },
+            Err(e) => Err(Box::new(std::io::Error::new(
                 std::io::ErrorKind::Other,
-                format!("Failed to update score with status: {}", response.status()),
+                format!("Failed to update score with error: {}", e),
             ))),
         }
     }
@@ -1184,18 +1354,27 @@ impl Student {
                 &url,                               // URL da API
                 &self.info.course_info.canvas_info, // Token de acesso
                 params,                             // Parâmetros da requisição
-            )?;
+            );
             interaction();
-
-            if response.status().is_success() {
-                let submission: Submission = response.json()?; // Deserializar a resposta JSON para um objeto Submission
-                submissions.push(submission);
-            } else {
-                let error_message = response.text()?;
-                return Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    format!("Failed to fetch submissions with error: {}", error_message),
-                )));
+            match response {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        let submission: Submission = response.json()?; // Deserializar a resposta JSON para um objeto Submission
+                        submissions.push(submission);
+                    } else {
+                        let error_message = response.text()?;
+                        return Err(Box::new(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            format!("Failed to fetch submissions with error: {}", error_message),
+                        )));
+                    }
+                }
+                Err(e) => {
+                    return Err(Box::new(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("Failed to fetch submissions with error: {}", e),
+                    )));
+                }
             }
         }
         Ok(submissions)
