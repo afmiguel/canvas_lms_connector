@@ -224,57 +224,6 @@ enum CanvasCredentials {
     System(CanvasInfo),
 }
 
-fn get_canvas_credentials() -> CanvasCredentials {
-    let app_name = env!("CARGO_PKG_NAME");
-    // Inicialmente, tenta carregar as credenciais do arquivo
-    match Canvas::load_credentials_from_file() {
-        Ok(credentials_ok) => {
-            return CanvasCredentials::File(credentials_ok);
-        }
-        Err(_) => {
-            // Se não for possível carregar do arquivo, tenta carregar do sistema
-            match Canvas::load_credentials_from_system() {
-                Ok(credentials_ok) => {
-                    return CanvasCredentials::System(credentials_ok);
-                }
-                Err(_) => {
-                    // Se não for possível carregar do sistema, tenta registrar as credenciais
-                    loop {
-                        println!("Do you wish to register the credentials? You can find your API key in your Canvas Learning account settings. (y/n)");
-                        let mut input = String::new();
-                        std::io::stdin().read_line(&mut input).unwrap();
-                        if input.trim().to_uppercase() != "Y" {
-                            return CanvasCredentials::None;
-                        }
-                        println!("Enter the Canvas URL:");
-                        input.clear();
-                        std::io::stdin().read_line(&mut input).unwrap();
-                        let url = input.trim().to_string();
-                        println!("Enter the Canvas token:");
-                        input.clear();
-                        std::io::stdin().read_line(&mut input).unwrap();
-                        let token = input.trim().to_string();
-
-                        // Update the credentials
-                        if let Err(e) = Entry::new(app_name, "URL_CANVAS")
-                            .unwrap()
-                            .set_password(url.as_str())
-                        {
-                            eprintln!("Error saving URL: {}", e);
-                        }
-                        if let Err(e) = Entry::new(app_name, "TOKEN_CANVAS")
-                            .unwrap()
-                            .set_password(token.as_str())
-                        {
-                            eprintln!("Error saving token: {}", e);
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 /// Represents the main interface for interacting with the Canvas Learning Management System (LMS).
 ///
 /// This structure provides methods for performing various operations related to the Canvas LMS,
