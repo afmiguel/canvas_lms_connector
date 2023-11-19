@@ -263,7 +263,7 @@ impl Canvas {
     fn test_canvas_credentials(api_url: &str, access_token: &str) -> Result<u16, u16> {
         let client = reqwest::blocking::Client::new();
         let res = client
-            .get(format!("{}/users/self",api_url))
+            .get(format!("{}/users/self", api_url))
             .header("Authorization", format!("Bearer {}", access_token))
             .send();
 
