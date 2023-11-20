@@ -62,7 +62,6 @@ mod assignment;
 mod submission;
 mod canvas;
 
-use connection::{send_http_request, HttpMethod};
 pub use credentials::CanvasCredentials;
 pub use course::{Course, CourseInfo};
 pub use student::{Student, StudentInfo};

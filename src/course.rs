@@ -1,8 +1,7 @@
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use crate::{CanvasCredentials};
-use crate::send_http_request;
-use crate::HttpMethod;
+use crate::connection::{send_http_request, HttpMethod};
 use crate::student::{Student, StudentInfo};
 use crate::assignment::{Assignment, AssignmentInfo};
 
