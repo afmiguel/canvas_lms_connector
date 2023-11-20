@@ -89,7 +89,7 @@ pub fn send_http_request(
     params: Vec<(String, String)>,
 ) -> HttpRequestResult {
     let mut attempts = 0;
-    let max_attempts = 3;
+    let max_attempts = 5;
 
     while attempts < max_attempts {
         match send_http_request_single_try(client, method.clone(), url, canvas_info, params.clone())
@@ -97,7 +97,7 @@ pub fn send_http_request(
             Ok(response) => return Ok(response),
             Err(status) if status == 403 && attempts < max_attempts - 1 => {
                 attempts += 1;
-                thread::sleep(Duration::from_millis(500));
+                thread::sleep(Duration::from_millis(1000));
             }
             Err(status) => return Err(status),
         }

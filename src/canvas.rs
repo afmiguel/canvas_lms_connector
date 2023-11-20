@@ -373,7 +373,11 @@ impl Canvas {
     ///     Err(e) => eprintln!("Error loading credentials: {}", e),
     /// }
     /// ```
+    #[allow(unreachable_code)]
     pub fn load_credentials_from_file() -> Result<CanvasCredentials, String> {
+        #[cfg(not(feature = "use_file_credentials"))]{
+            return Err("Feature not enabled".to_string());
+        }
         if let Some(mut home_config_buffer) = dirs::home_dir() {
             home_config_buffer.push("Downloads");
             home_config_buffer.push("config.json");
