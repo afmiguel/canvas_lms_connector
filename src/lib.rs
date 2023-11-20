@@ -54,118 +54,18 @@
 //!     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
 //! }
 //! ```
+mod canvas_connection;
+pub mod canvas_credentials;
+
+use canvas_connection::{send_http_request, HttpMethod};
+pub use canvas_credentials::CanvasCredentials;
 use chrono::{DateTime, Utc};
 use keyring::Entry;
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
-use std::process::exit;
 use std::sync::Arc;
-use std::{thread, time::Duration};
-use std_semaphore::Semaphore;
-
-/// The maximum number of simultaneous HTTP requests allowed.
-///
-/// This constant defines a limit on the number of HTTP requests that can be
-/// sent concurrently. It is used to control the load on the server and prevent
-/// overwhelming the network with too many simultaneous requests.
-///
-/// The limit is set considering the typical server load and performance
-/// expectations. Adjust the value based on the specific requirements of
-/// the application and server capabilities.
-const SIMULTANEOUS_REQUESTS_LIMIT: isize = 30;
-
-/// Represents the type of HTTP request method.
-///
-/// This enumeration is used to specify the type of HTTP method being used in a request.
-/// It supports various HTTP methods like `GET` and `PUT`. Each variant may carry
-/// additional data relevant to that specific type of request. For example, the `Put`
-/// variant can contain a JSON body to be sent with the request.
-///
-/// # Variants
-///
-/// - `Get`: Represents an HTTP GET request.
-/// - `Put(serde_json::Value)`: Represents an HTTP PUT request with an associated JSON body.
-///
-/// This enum is critical for constructing and sending different types of HTTP requests,
-/// allowing for flexibility and specificity in how data is communicated to a server.
-#[derive(Clone)]
-enum HttpMethod {
-    Get,
-    Put(serde_json::Value),
-}
-
-type HttpRequestResult = Result<reqwest::blocking::Response, u16>;
-
-// A global semaphore for managing simultaneous HTTP requests.
-//
-// This semaphore is initialized with the maximum number of simultaneous requests defined by
-// `SIMULTANEOUS_REQUESTS_LIMIT`. It is used to control access to a resource, in this case,
-// the number of concurrent HTTP requests, ensuring that the limit is not exceeded.
-//
-// The semaphore is lazily initialized the first time it is accessed. This approach is beneficial
-// for resources that require complex setup or are not used in every execution path of the program.
-//
-// The `Semaphore` from the `std_semaphore` crate is used to implement this functionality.
-//
-// The static nature of `SEMAPHORE` ensures that it is shared across all threads and parts of the
-// application, maintaining a consistent and global state for request limiting.
-lazy_static! {
-    static ref SEMAPHORE: Semaphore = Semaphore::new(SIMULTANEOUS_REQUESTS_LIMIT);
-}
-
-fn send_http_request_single_try(
-    client: &reqwest::blocking::Client,
-    method: HttpMethod,
-    url: &str,
-    canvas_info: &CanvasInfo,
-    params: Vec<(String, String)>,
-) -> HttpRequestResult {
-    let request_builder = match &method {
-        HttpMethod::Get => client
-            .get(url)
-            .bearer_auth(&canvas_info.token_canvas)
-            .query(&params),
-        HttpMethod::Put(body) => client
-            .put(url)
-            .bearer_auth(&canvas_info.token_canvas)
-            .json(body),
-    };
-
-    let response = request_builder.send();
-
-    match response {
-        Ok(response) if response.status().is_success() => Ok(response),
-        Ok(response) => Err(response.status().as_u16()),
-        Err(_) => Err(0), // Código genérico para erros de rede ou de cliente HTTP
-    }
-}
-
-fn send_http_request(
-    client: &reqwest::blocking::Client,
-    method: HttpMethod,
-    url: &str,
-    canvas_info: &CanvasInfo,
-    params: Vec<(String, String)>,
-) -> HttpRequestResult {
-    let mut attempts = 0;
-    let max_attempts = 3;
-
-    while attempts < max_attempts {
-        match send_http_request_single_try(client, method.clone(), url, canvas_info, params.clone())
-        {
-            Ok(response) => return Ok(response),
-            Err(status) if status == 403 && attempts < max_attempts - 1 => {
-                attempts += 1;
-                thread::sleep(Duration::from_millis(500));
-            }
-            Err(status) => return Err(status),
-        }
-    }
-    Err(403) // Retorna 403 se todas as tentativas falharem
-}
 
 /// Represents the possible outcomes of operations interacting with the Canvas system.
 ///
@@ -212,17 +112,6 @@ pub enum CanvasResult {
 ///     token_canvas: "your_api_token".to_string(),
 /// };
 /// ```
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct CanvasInfo {
-    pub url_canvas: String,
-    pub token_canvas: String,
-}
-
-enum CanvasCredentials {
-    None,
-    File(CanvasInfo),
-    System(CanvasInfo),
-}
 
 /// Represents the main interface for interacting with the Canvas Learning Management System (LMS).
 ///
@@ -260,153 +149,6 @@ pub struct Canvas {
 /// Each method focuses on a specific aspect of Canvas LMS interaction, ensuring ease of use
 /// in various application contexts.
 impl Canvas {
-    fn test_canvas_credentials(api_url: &str, access_token: &str) -> Result<u16, u16> {
-        let client = reqwest::blocking::Client::new();
-        let res = client
-            .get(format!("{}/users/self", api_url))
-            .header("Authorization", format!("Bearer {}", access_token))
-            .send();
-
-        match res {
-            Ok(response) => {
-                if response.status().is_success() {
-                    Ok(200)
-                } else {
-                    Err(response.status().as_u16())
-                }
-            }
-            Err(_) => Err(0), // Código genérico para erros de rede ou de cliente HTTP
-        }
-    }
-
-    fn load_credentials() -> CanvasCredentials {
-        // Inicialmente, tenta carregar as credenciais do arquivo
-        match Canvas::load_credentials_from_file() {
-            Ok(credentials_ok) => {
-                return CanvasCredentials::File(credentials_ok);
-            }
-            Err(_) => {
-                // Se não for possível carregar do arquivo, tenta carregar do sistema
-                match Canvas::load_credentials_from_system() {
-                    Ok(credentials_ok) => {
-                        return CanvasCredentials::System(credentials_ok);
-                    }
-                    Err(_) => {
-                        return CanvasCredentials::None;
-                    }
-                }
-            }
-        }
-    }
-
-    fn set_system_credentials() -> CanvasCredentials {
-        let app_name = env!("CARGO_PKG_NAME");
-        loop {
-            println!("Do you wish to register the credentials? You can find your API key in your Canvas Learning account settings. (y/n)");
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            if input.trim().to_uppercase() != "Y" {
-                return CanvasCredentials::None;
-            }
-            println!("Enter the Canvas URL:");
-            input.clear();
-            std::io::stdin().read_line(&mut input).unwrap();
-            let url = input.trim().to_string();
-            println!("Enter the Canvas token:");
-            input.clear();
-            std::io::stdin().read_line(&mut input).unwrap();
-            let token = input.trim().to_string();
-
-            // Update the credentials
-            if let Err(e) = Entry::new(app_name, "URL_CANVAS")
-                .unwrap()
-                .set_password(url.as_str())
-            {
-                eprintln!("Error saving URL: {}", e);
-            }
-            if let Err(e) = Entry::new(app_name, "TOKEN_CANVAS")
-                .unwrap()
-                .set_password(token.as_str())
-            {
-                eprintln!("Error saving token: {}", e);
-            }
-            match Canvas::test_canvas_credentials(url.as_str(), token.as_str()) {
-                Ok(_) => {
-                    return CanvasCredentials::System(CanvasInfo {
-                        url_canvas: url,
-                        token_canvas: token,
-                    });
-                }
-                Err(status_code) if status_code == 401 || status_code == 403 => {
-                    println!("Incorrect credentials");
-                }
-                Err(status_code) => {
-                    println!("Error accessing Canvas API - Status Code {}", status_code);
-                    exit(1);
-                }
-            }
-        }
-    }
-
-    pub fn credentials() -> CanvasInfo {
-        match Canvas::load_credentials() {
-            CanvasCredentials::None => match Canvas::set_system_credentials() {
-                CanvasCredentials::System(credentials) => {
-                    return credentials;
-                }
-                _ => {
-                    println!("Error obtaining credentials");
-                    exit(1);
-                }
-            },
-            CanvasCredentials::File(credentials) => {
-                match Canvas::test_canvas_credentials(
-                    credentials.url_canvas.as_str(),
-                    credentials.token_canvas.as_str(),
-                ) {
-                    Ok(_) => {
-                        return CanvasInfo {
-                            url_canvas: credentials.url_canvas,
-                            token_canvas: credentials.token_canvas,
-                        };
-                    }
-                    Err(e) => {
-                        println!("Error accessing Canvas API - Status Code {}", e);
-                        exit(1);
-                    }
-                }
-            }
-            CanvasCredentials::System(credentials) => {
-                match Canvas::test_canvas_credentials(
-                    credentials.url_canvas.as_str(),
-                    credentials.token_canvas.as_str(),
-                ) {
-                    Ok(_) => {
-                        return CanvasInfo {
-                            url_canvas: credentials.url_canvas,
-                            token_canvas: credentials.token_canvas,
-                        };
-                    }
-                    Err(status_code) if status_code == 401 || status_code == 403 => {
-                        match Canvas::set_system_credentials() {
-                            CanvasCredentials::System(credentials) => {
-                                return credentials;
-                            }
-                            _ => {
-                                println!("Error obtaining credentials");
-                                exit(1);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        println!("Error accessing Canvas API - Status Code {}", e);
-                        exit(1);
-                    }
-                }
-            }
-        }
-    }
-
     /// Fetches a list of courses from the Canvas API using the provided credentials.
     ///
     /// This function attempts to retrieve all courses accessible with the given Canvas credentials.
@@ -434,7 +176,7 @@ impl Canvas {
     ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
     /// }
     /// ```
-    pub fn fetch_courses_with_credentials(info: &CanvasInfo) -> CanvasResult {
+    pub fn fetch_courses_with_credentials(info: &CanvasCredentials) -> CanvasResult {
         let canvas_info_arc = Arc::new((*info).clone());
 
         let url = format!("{}/courses", info.url_canvas);
@@ -511,7 +253,10 @@ impl Canvas {
     ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
     /// }
     /// ```
-    pub fn fetch_single_course_with_credentials(info: &CanvasInfo, course_id: u64) -> CanvasResult {
+    pub fn fetch_single_course_with_credentials(
+        info: &CanvasCredentials,
+        course_id: u64,
+    ) -> CanvasResult {
         let canvas_info_arc = Arc::new((*info).clone());
         let url = format!("{}/courses/{}", info.url_canvas, course_id);
 
@@ -582,7 +327,7 @@ impl Canvas {
     /// ```
     pub fn fetch_courses_<F>(f: F) -> CanvasResult
     where
-        F: FnOnce(&CanvasInfo) -> CanvasResult + Copy,
+        F: FnOnce(&CanvasCredentials) -> CanvasResult + Copy,
     {
         let app_name = env!("CARGO_PKG_NAME");
         match Canvas::load_credentials_from_file() {
@@ -672,7 +417,7 @@ impl Canvas {
     /// }
     /// ```
     fn convert_json_to_course(
-        canvas_info: &Arc<CanvasInfo>,
+        canvas_info: &Arc<CanvasCredentials>,
         course: &serde_json::Value,
     ) -> Option<Course> {
         let id = course["id"].as_u64()?;
@@ -710,7 +455,7 @@ impl Canvas {
     ///     Err(e) => eprintln!("Error loading credentials: {}", e),
     /// }
     /// ```
-    pub fn load_credentials_from_file() -> Result<CanvasInfo, String> {
+    pub fn load_credentials_from_file() -> Result<CanvasCredentials, String> {
         if let Some(mut home_config_buffer) = dirs::home_dir() {
             home_config_buffer.push("Downloads");
             home_config_buffer.push("config.json");
@@ -718,7 +463,7 @@ impl Canvas {
                 if let Ok(file) = File::open(config_path) {
                     println!("Configuration file found: {}", config_path);
                     let reader = BufReader::new(file);
-                    let config: Result<CanvasInfo, serde_json::Error> =
+                    let config: Result<CanvasCredentials, serde_json::Error> =
                         serde_json::from_reader(reader);
                     if let Ok(config) = config {
                         return Ok(config);
@@ -756,7 +501,7 @@ impl Canvas {
     ///     Err(e) => eprintln!("Error loading credentials from system: {}", e),
     /// }
     /// ```
-    pub fn load_credentials_from_system() -> Result<CanvasInfo, String> {
+    pub fn load_credentials_from_system() -> Result<CanvasCredentials, String> {
         let app_name = env!("CARGO_PKG_NAME");
         // Initially retrieves the URL
         match Entry::new(app_name, "URL_CANVAS") {
@@ -767,7 +512,7 @@ impl Canvas {
                         match Entry::new(app_name, "TOKEN_CANVAS") {
                             Ok(entry) => match entry.get_password() {
                                 Ok(token) => {
-                                    return Ok(CanvasInfo {
+                                    return Ok(CanvasCredentials {
                                         url_canvas: url,
                                         token_canvas: token,
                                     });
@@ -806,7 +551,7 @@ pub struct CourseInfo {
     pub name: String,
     pub course_code: String,
     #[serde(skip)]
-    pub canvas_info: Arc<CanvasInfo>,
+    pub canvas_info: Arc<CanvasCredentials>,
 }
 
 /// Represents a course within the Canvas Learning Management System.
