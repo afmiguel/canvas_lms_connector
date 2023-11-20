@@ -1,8 +1,26 @@
-use crate::Canvas;
+use crate::canvas::Canvas;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::process::exit;
-
+/// Stores configuration information for accessing the Canvas API.
+///
+/// This structure holds essential data required for making authenticated requests to the Canvas API.
+/// It includes the base URL of the Canvas instance and the API token used for authentication.
+///
+/// # Fields
+///
+/// - `url_canvas`: The base URL of the Canvas API endpoint.
+/// - `token_canvas`: The API token used for authenticating requests to the Canvas system.
+///
+/// # Examples
+///
+/// ```
+/// // Example of creating a CanvasInfo instance
+/// let canvas_info = CanvasInfo {
+///     url_canvas: "https://canvas.example.com".to_string(),
+///     token_canvas: "your_api_token".to_string(),
+/// };
+/// ```
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct CanvasCredentials {
     pub url_canvas: String,
