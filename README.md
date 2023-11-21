@@ -101,9 +101,24 @@ To configure the "Canvas LMS Connector" for first-time use, follow these steps:
     - Click `Generate Token` to create a new API token.
     - Securely store the generated token, as it will not be displayed again.
 
+After obtaining the API URL and token, you can test these credentials using the `test_canvas_credentials` function provided by the `CanvasCredentials` struct. This function helps verify the validity of the API URL and token.
+
+Example usage:
+```rust
+use canvas_lms_connector::credentials::{CanvasCredentials, test_canvas_credentials};
+
+let api_url = "https://your-institution.instructure.com/api/v1";
+let access_token = "your_api_token";
+let test_result = test_canvas_credentials(api_url, access_token);
+
+match test_result {
+    Ok(status_code) => println!("Credentials are valid! Status code: {}", status_code),
+    Err(error_code) => eprintln!("Failed to validate credentials. Error code: {}", error_code),
+}
+```
 With the API URL and token, you can now set up the "Canvas LMS Connector" in your project. Typically, these values are set as environment variables or configured in a settings file for security and ease of management.
 
-### Creating Authentication Credentials
+### Creating Authentication Credentials Structure
 
 The authentication process in the "Canvas LMS Connector" begins with obtaining a `CanvasCredentials` struct, which contains the necessary credentials acquired in the previous steps. This struct plays a crucial role in establishing a secure connection with the Canvas LMS API. The following subsections detail the methods available for obtaining and securely storing these credentials.
 
@@ -148,6 +163,45 @@ The authentication process in the "Canvas LMS Connector" begins with obtaining a
 
 These methods ensure authentication with the Canvas LMS for API interactions.
 
+### Retrieving Courses
+
+Retrieving courses from the Canvas LMS using the "Canvas LMS Connector" involves two methods returning distinct result types: `CanvasResultCourses` for multiple courses and `CanvasResultSingleCourse` for a single course.
+
+**`CanvasResultCourses` Structure**:
+- Variants:
+    - `Ok(Vec<Course>)`: Success with a list of courses.
+    - `ErrConnection(String)`: Error related to connection issues.
+    - `ErrCredentials(String)`: Error related to authentication or credentials.
+
+**`CanvasResultSingleCourse` Structure**:
+- Variants:
+    - `Ok(Course)`: Success with a single course.
+    - `ErrConnection(String)`: Error related to connection issues.
+    - `ErrCredentials(String)`: Error related to authentication or credentials.
+
+#### Fetching All Courses:
+```rust
+use canvas_lms_connector::{Canvas, CanvasCredentials, CanvasResultCourses};
+
+let credentials = CanvasCredentials { ... }; // Initialize with your credentials
+match Canvas::fetch_courses_with_credentials(&credentials) {
+    CanvasResultCourses::Ok(courses) => println!("Courses: {:?}", courses),
+    CanvasResultCourses::ErrConnection(err) => eprintln!("Connection error: {}", err),
+    CanvasResultCourses::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+}
+```
+#### Fetching a Single Course by ID:
+```rust
+use canvas_lms_connector::{Canvas, CanvasCredentials, CanvasResultSingleCourse};
+
+let credentials = CanvasCredentials { ... }; // Initialize with your credentials
+let course_id: u64 = 123; // Your course ID
+match Canvas::fetch_single_course_with_credentials(&credentials, course_id) {
+CanvasResultSingleCourse::Ok(course) => println!("Course: {:?}", course),
+CanvasResultSingleCourse::ErrConnection(err) => eprintln!("Connection error: {}", err),
+CanvasResultSingleCourse::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+}
+```
 
 
 

@@ -2,28 +2,14 @@ use crate::connection::{send_http_request, HttpMethod};
 use crate::{CanvasCredentials, Course, CourseInfo};
 use std::sync::Arc;
 
-/// Represents the possible outcomes of operations interacting with the Canvas system.
-///
-/// This enumeration is used to encapsulate the results of various operations when interacting with the Canvas Learning Management System, such as fetching courses or handling credentials. It differentiates between successful outcomes and various types of errors that might occur.
-///
-/// # Variants
-///
-/// - `Ok(Vec<Course>)`: Indicates a successful operation, returning a list of `Course` objects.
-/// - `ErrConnection(String)`: Represents a failure due to connection issues, with an accompanying error message.
-/// - `ErrCredentials(String)`: Indicates an error related to authentication or credentials, with a detailed message.
-///
-/// # Examples
-///
-/// ```
-/// // Example of using CanvasResult to handle the outcome of a course fetching operation
-/// match fetch_courses_with_credentials(&canvas_info) {
-///     CanvasResult::Ok(courses) => println!("Courses fetched successfully"),
-///     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
-///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
-/// }
-/// ```
-pub enum CanvasResult {
+pub enum CanvasResultCourses {
     Ok(Vec<Course>),
+    ErrConnection(String),
+    ErrCredentials(String),
+}
+
+pub enum CanvasResultSingleCourse {
+    Ok(Course),
     ErrConnection(String),
     ErrCredentials(String),
 }
@@ -91,7 +77,7 @@ impl Canvas {
     ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
     /// }
     /// ```
-    pub fn fetch_courses_with_credentials(info: &CanvasCredentials) -> CanvasResult {
+    pub fn fetch_courses_with_credentials(info: &CanvasCredentials) -> CanvasResultCourses {
         let canvas_info_arc = Arc::new((*info).clone());
 
         let url = format!("{}/courses", info.url_canvas);
@@ -122,14 +108,14 @@ impl Canvas {
                         }));
                         page += 1; // Increnent page number
                     } else {
-                        return CanvasResult::ErrCredentials(format!(
+                        return CanvasResultCourses::ErrCredentials(format!(
                             "Failed to fetch courses with status: {}",
                             response.status()
                         ));
                     }
                 }
                 Err(e) => {
-                    return CanvasResult::ErrConnection(format!(
+                    return CanvasResultCourses::ErrConnection(format!(
                         "Failed to fetch courses with error: {}",
                         e
                     ));
@@ -137,7 +123,7 @@ impl Canvas {
             }
         }
 
-        CanvasResult::Ok(all_courses)
+        CanvasResultCourses::Ok(all_courses)
     }
 
     /// Fetches details of a specific course from the Canvas API using provided credentials.
@@ -171,7 +157,7 @@ impl Canvas {
     pub fn fetch_single_course_with_credentials(
         info: &CanvasCredentials,
         course_id: u64,
-    ) -> CanvasResult {
+    ) -> CanvasResultSingleCourse {
         let canvas_info_arc = Arc::new((*info).clone());
         let url = format!("{}/courses/{}", info.url_canvas, course_id);
 
@@ -187,18 +173,18 @@ impl Canvas {
                     let course: serde_json::Value = response.json().unwrap();
                     if let Some(course) = Canvas::convert_json_to_course(&canvas_info_arc, &course)
                     {
-                        return CanvasResult::Ok(vec![course]);
+                        return CanvasResultSingleCourse::Ok(course);
                     } else {
-                        return CanvasResult::ErrConnection(format!("Failed to parse course data"));
+                        return CanvasResultSingleCourse::ErrConnection(format!("Failed to parse course data"));
                     }
                 } else {
-                    CanvasResult::ErrConnection(format!(
+                    CanvasResultSingleCourse::ErrConnection(format!(
                         "Failed to fetch course: HTTP Status {}",
                         response.status()
                     ))
                 }
             }
-            Err(e) => CanvasResult::ErrConnection(format!("HTTP request failed: {}", e)),
+            Err(e) => CanvasResultSingleCourse::ErrConnection(format!("HTTP request failed: {}", e)),
         }
     }
 
