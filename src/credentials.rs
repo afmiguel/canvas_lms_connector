@@ -1,7 +1,9 @@
-use crate::canvas::Canvas;
 use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::process::exit;
+use std::fs::File;
+use std::io::BufReader;
+
 /// Stores configuration information for accessing the Canvas API.
 ///
 /// This structure holds essential data required for making authenticated requests to the Canvas API.
@@ -53,15 +55,115 @@ impl CanvasCredentials {
         }
     }
 
+    /// Loads Canvas credentials from a configuration file.
+    ///
+    /// This function attempts to read Canvas API credentials from a predefined configuration file.
+    /// It looks for a file named `config.json` in the user's `Downloads` directory and tries to deserialize
+    /// the contents into a `CanvasInfo` structure. The `CanvasInfo` contains the base URL and API token required
+    /// for authenticating Canvas API requests.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` with either:
+    /// - `Ok(CanvasInfo)` containing the loaded credentials on successful file reading and deserialization.
+    /// - `Err(String)` with an error message if the file cannot be read, the path is invalid, or the contents
+    ///   cannot be deserialized into `CanvasInfo`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// match load_credentials_from_file() {
+    ///     Ok(canvas_info) => println!("CanvasInfo loaded: {:?}", canvas_info),
+    ///     Err(e) => eprintln!("Error loading credentials: {}", e),
+    /// }
+    /// ```
+    #[allow(unreachable_code)]
+    pub fn load_credentials_from_file() -> Result<CanvasCredentials, String> {
+        #[cfg(not(feature = "use_file_credentials"))]{
+            return Err("Feature not enabled".to_string());
+        }
+        if let Some(mut home_config_buffer) = dirs::home_dir() {
+            home_config_buffer.push("Downloads");
+            home_config_buffer.push("config.json");
+            if let Some(config_path) = home_config_buffer.to_str() {
+                if let Ok(file) = File::open(config_path) {
+                    println!("Configuration file found: {}", config_path);
+                    let reader = BufReader::new(file);
+                    let config: Result<CanvasCredentials, serde_json::Error> =
+                        serde_json::from_reader(reader);
+                    if let Ok(config) = config {
+                        return Ok(config);
+                    } else {
+                        panic!("Error reading config.json");
+                    }
+                } else {
+                    return Err("Error opening configuration file".to_string());
+                }
+            } else {
+                panic!("Error converting path to string");
+            }
+        }
+        panic!("Error obtaining home directory");
+    }
+
+    /// Loads Canvas credentials from the system's keyring.
+    ///
+    /// This function retrieves the Canvas API credentials (URL and token) stored in the system's keyring.
+    /// It uses the `keyring` crate to access the secure storage provided by the operating system. The credentials
+    /// are expected to be stored under the application's name, fetched from the `CARGO_PKG_NAME` environment variable.
+    /// This approach enhances security by avoiding plain text storage of sensitive information.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` with either:
+    /// - `Ok(CanvasInfo)` containing the credentials if successfully retrieved from the system's keyring.
+    /// - `Err(String)` with an error message if there are issues accessing the keyring or retrieving the credentials.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// match load_credentials_from_system() {
+    ///     Ok(canvas_info) => println!("CanvasInfo loaded from system: {:?}", canvas_info),
+    ///     Err(e) => eprintln!("Error loading credentials from system: {}", e),
+    /// }
+    /// ```
+    pub fn load_credentials_from_system() -> Result<CanvasCredentials, String> {
+        let app_name = env!("CARGO_PKG_NAME");
+        // Initially retrieves the URL
+        match Entry::new(app_name, "URL_CANVAS") {
+            Ok(entry) => {
+                match entry.get_password() {
+                    Ok(url) => {
+                        // Retrieves the TOKEN
+                        match Entry::new(app_name, "TOKEN_CANVAS") {
+                            Ok(entry) => match entry.get_password() {
+                                Ok(token) => {
+                                    return Ok(CanvasCredentials {
+                                        url_canvas: url,
+                                        token_canvas: token,
+                                    });
+                                }
+                                Err(_) => Err("Error retrieving token from system".to_string()),
+                            },
+                            Err(_) => Err("Error retrieving token from system".to_string()),
+                        }
+                    }
+                    Err(_) => Err("Error retrieving URL from system".to_string()),
+                }
+            }
+            Err(_) => Err("Error retrieving URL from system".to_string()),
+        }
+    }
+
     fn load_credentials() -> CanvasCredentialType {
         // Inicialmente, tenta carregar as credenciais do arquivo
-        match Canvas::load_credentials_from_file() {
+        match Self::load_credentials_from_file() {
             Ok(credentials_ok) => {
                 return CanvasCredentialType::File(credentials_ok);
             }
             Err(_) => {
                 // Se não for possível carregar do arquivo, tenta carregar do sistema
-                match Canvas::load_credentials_from_system() {
+                match Self::load_credentials_from_system() {
                     Ok(credentials_ok) => {
                         return CanvasCredentialType::System(credentials_ok);
                     }

@@ -8,7 +8,7 @@ repository = "https://github.com/afmiguel/canvas_lms_connector"
 readme = "README.md"
 keywords = ["canvas", "lms", "api", "connector", "rust"]
 categories = ["web-programming", "network-programming", "education"]
-authors = ["afmiguel"]
+authors = ["Prof. Afonso Miguel - PUCPR"]
 documentation = "https://docs.rs/canvas_lms_connector"
 
 [dependencies]
