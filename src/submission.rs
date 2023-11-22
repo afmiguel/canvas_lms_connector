@@ -1,34 +1,34 @@
+// Import necessary crates and modules
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use crate::StudentInfo;
+use chrono::{DateTime, Utc}; // chrono crate is used for handling date and time
+use serde::{Deserialize, Serialize}; // serde for serialization and deserialization
+use crate::StudentInfo; // StudentInfo struct from the current crate
 
-
-/// Represents a student's submission for an assignment in the Canvas Learning Management System.
+/// Structure representing a student's submission for an assignment in the Canvas Learning Management System.
 ///
-/// This structure contains detailed information about a specific submission made by a student for an assignment.
-/// It includes the submission's unique identifier, the assignment ID it belongs to, the score (if graded),
-/// and the timestamp when the submission was made. Additionally, it holds a reference to the `StudentInfo` of
-/// the student who made the submission, linking it directly to the student's data.
+/// This struct provides a detailed view of a student's submission, capturing key aspects like the submission's ID,
+/// the associated assignment ID, the score (if already graded), and the timestamp of submission. It also includes
+/// a reference to the `StudentInfo` struct to establish a direct link to the student who made the submission.
 ///
-/// # Fields
+/// Fields:
+/// - `id`: Unique identifier for the submission within the Canvas system.
+/// - `assignment_id`: Identifier of the assignment this submission is related to.
+/// - `score`: Optional field that contains the score if the submission has been graded.
+/// - `submitted_at`: Optional field indicating the date and time when the submission was made, using UTC timezone.
+/// - `student`: Thread-safe shared reference (`Arc`) to `StudentInfo`, which contains data about the student.
 ///
-/// - `id`: The unique identifier of the submission in the Canvas system.
-/// - `assignment_id`: The ID of the assignment to which this submission corresponds.
-/// - `score`: An optional field containing the score of the submission, if graded.
-/// - `submitted_at`: An optional field indicating the date and time of submission.
-/// - `student`: A shared reference (`Arc`) to `StudentInfo`, linking the submission to the student.
+/// The use of `Arc<StudentInfo>` is crucial for concurrent access and efficient memory management when the same student's 
+/// information is accessed from multiple points in the program. This struct is essential for functionalities that involve 
+/// tracking and assessing student performance, especially in digital learning environments like Canvas.
 ///
-/// The structure plays a vital role in the digital workflow of assignments, enabling effective tracking
-/// and assessment of student performance in the Canvas environment.
-///
-/// See also: fetch_submissions_for_assignments, fetch_assignments_and_latest_submissions
+/// Examples of related functions include `fetch_submissions_for_assignments` and `fetch_assignments_and_latest_submissions`,
+/// which likely utilize this struct to represent and handle student submissions.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Submission {
-    pub id: u64,
-    pub assignment_id: u64,
-    pub score: Option<f64>,
-    pub submitted_at: Option<DateTime<Utc>>,
-    #[serde(skip)]
-    pub student: Arc<StudentInfo>,
+    pub id: u64, // Submission's unique identifier
+    pub assignment_id: u64, // Assignment's unique identifier
+    pub score: Option<f64>, // Graded score, optional
+    pub submitted_at: Option<DateTime<Utc>>, // Submission timestamp, optional
+    #[serde(skip)] // Skipped during serialization/deserialization
+    pub student: Arc<StudentInfo>, // Shared reference to student information
 }

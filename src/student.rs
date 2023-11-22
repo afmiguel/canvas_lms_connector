@@ -1,3 +1,4 @@
+// Import necessary crates and modules
 use std::collections::HashMap;
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
@@ -6,22 +7,20 @@ use crate::assignment::{Assignment, AssignmentInfo};
 use crate::connection::{HttpMethod, send_http_request};
 use crate::submission::Submission;
 
-/// Contains detailed information about a student in the Canvas system.
+/// Structure for storing and managing student data in the Canvas system.
 ///
-/// This structure is used to store and handle specific data related to a student within a Canvas course.
-/// It includes vital information such as the student's unique identifier, name, and email address.
-/// Additionally, it holds a reference to `CourseInfo`, providing context for API requests related
-/// to the student within the specific course.
+/// This struct encapsulates key information about a student, particularly relevant in the context of a Canvas course.
+/// It holds essential details like the student's identifier, name, and email, and also maintains a link to course-specific
+/// information and API credentials through `CourseInfo`.
 ///
-/// # Fields
+/// Fields:
+/// - `id`: The unique identifier of the student in Canvas.
+/// - `name`: The student's full name.
+/// - `email`: The student's email address.
+/// - `course_info`: A thread-safe reference (`Arc`) to the course information and API credentials (`CourseInfo`).
 ///
-/// - `id`: The unique identifier of the student in the Canvas system.
-/// - `name`: The full name of the student.
-/// - `email`: The email address of the student.
-/// - `course_info`: A shared reference (`Arc`) to `CourseInfo` containing Canvas API credentials and course details.
-///
-/// This structure is fundamental for representing a student and performing various operations related
-/// to student data within the Canvas API context.
+/// The struct is essential for various student-related operations in the Canvas API, such as retrieving student details,
+/// managing course enrollments, etc.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct StudentInfo {
     pub id: u64,
@@ -31,77 +30,43 @@ pub struct StudentInfo {
     pub course_info: Arc<CourseInfo>,
 }
 
-/// Represents a student within the Canvas Learning Management System.
+/// High-level representation of a student in the Canvas Learning Management System.
 ///
-/// This structure encapsulates information about a student enrolled in a course. It primarily contains
-/// `StudentInfo`, which holds details like the student's ID, name, and email, along with course-related
-/// information. The `Student` struct serves as a high-level representation of a student in Canvas,
-/// enabling access to and manipulation of student-related data in various operations and API interactions.
+/// This struct acts as a wrapper around `StudentInfo`, providing a streamlined way to manage and access student data.
+/// It is particularly useful for operations that involve student information, such as fetching grades, submissions,
+/// and other student-specific details.
 ///
-/// # Fields
+/// Fields:
+/// - `info`: A shared (`Arc`) reference to `StudentInfo` that contains the detailed information about the student.
 ///
-/// - `info`: A shared reference (`Arc`) to a `StudentInfo` instance containing detailed information about
-///   the student.
-///
-/// The `Student` struct is a key component in applications interacting with the Canvas API, providing a
-/// convenient and unified way to handle student-related data.
+/// This struct is central to handling student data efficiently, especially in scenarios requiring concurrent access
+/// to the same student information.
 pub struct Student {
     pub info: Arc<StudentInfo>,
 }
 
-/// Implementation block for the `Student` struct.
+/// Implementation of the `Student` struct, providing methods for student-specific interactions in the Canvas system.
 ///
-/// Provides methods to interact with student-specific data and functionalities in the Canvas Learning
-/// Management System. This includes fetching submissions for assignments, as well as retrieving and
-/// updating submissions and other student-related operations.
-///
-/// The methods utilize the `StudentInfo` contained within the `Student` struct to make relevant API calls,
-/// ensuring that the interactions are specific to the particular student instance.
-///
-/// # Methods
-///
-/// - `fetch_submissions_for_assignments`: Retrieves submissions for a set of assignments for the student.
-/// - `update_assignment_score`: Updates the score for a specific assignment submission for the student.
-///
-/// These methods are crucial for applications that require detailed interaction with student data in the
-/// Canvas system, such as tracking assignment submissions and managing academic records.
+/// These methods offer functionalities such as fetching submissions for assignments and updating assignment scores,
+/// tailored to individual students. They utilize the student's information and API access credentials for making
+/// authenticated requests to the Canvas API.
 impl Student {
-    /// Fetches submissions for a given set of assignments for the student.
+    /// Fetches submissions for specified assignments for this student.
     ///
-    /// This method queries the Canvas API to obtain submissions made by the student for specified assignments.
-    /// It uses the student's ID and the course's Canvas API credentials for authenticated requests. The function
-    /// is designed to handle multiple assignment IDs, making it versatile for fetching submissions across different
-    /// assignments.
+    /// Queries the Canvas API to retrieve submissions made by this student for a given set of assignments.
+    /// It requires authenticated access, using the student's ID and course API credentials.
     ///
-    /// # Type Parameters
+    /// Type Parameters:
+    /// - `F`: A function trait for additional interactions or side effects.
     ///
-    /// - `F`: The type of the closure passed for additional interactions. It must be a function that takes no
-    ///   parameters and returns nothing (`Fn()`).
+    /// Arguments:
+    /// - `client`: A HTTP client for executing requests.
+    /// - `assignment_ids`: IDs of the assignments for which submissions are to be fetched.
+    /// - `interaction`: A closure for any additional processing or side effects.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - A reference to the `reqwest::blocking::Client` for executing HTTP requests.
-    /// * `assignment_ids` - A slice of assignment IDs for which submissions need to be fetched.
-    /// * `interaction` - A closure that can be called for additional side effects or interactions.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` with either:
-    /// - `Ok(Vec<Submission>)` containing a list of submissions if the request is successful.
-    /// - `Err(Box<dyn std::error::Error>)` encapsulating any encountered errors during the API call,
-    ///   such as network issues, parsing errors, or API access problems.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let client = reqwest::blocking::Client::new();
-    /// let assignment_ids = vec![123, 456];
-    /// let interaction = || { /* interaction logic here */ };
-    /// match student.fetch_submissions_for_assignments(&client, &assignment_ids, interaction) {
-    ///     Ok(submissions) => println!("Submissions: {:?}", submissions),
-    ///     Err(e) => eprintln!("Error fetching submissions: {:?}", e),
-    /// }
-    /// ```
+    /// Returns:
+    /// - `Result<Vec<Submission>, Box<dyn std::error::Error>>`: A result containing either a list of submissions
+    ///   or an error encapsulating any issues encountered during the API call.
     pub fn fetch_submissions_for_assignments<F>(
         &self,
         client: &reqwest::blocking::Client,
@@ -158,41 +123,20 @@ impl Student {
 
     /// Retrieves assignments and their latest submissions for the student.
     ///
-    /// This method fetches assignments associated with the student and their corresponding latest submissions.
-    /// It leverages a collection of `Assignment` objects, using their IDs to query the Canvas API for submissions
-    /// made by the student. The function provides a comprehensive view of both assignment information and submission
-    /// details.
+    /// Fetches assignment details along with the most recent submissions made by the student. This method
+    /// provides a comprehensive view of a student's progress and submissions for specific assignments.
     ///
-    /// # Type Parameters
+    /// Type Parameters:
+    /// - `F`: A closure type for additional interactions.
     ///
-    /// - `F`: The type of the closure for additional interactions, following the `Fn()` trait.
+    /// Arguments:
+    /// - `client`: The HTTP client used for making requests.
+    /// - `assignments`: A shared reference to a collection of `Assignment` objects.
+    /// - `interaction`: A closure for additional operations during processing.
     ///
-    /// # Arguments
-    ///
-    /// * `client` - A reference to the `reqwest::blocking::Client` used for HTTP requests.
-    /// * `assignments` - An `Arc` containing a vector of `Assignment` objects to process.
-    /// * `interaction` - A closure for additional operations executed during processing.
-    ///
-    /// # Returns
-    ///
-    /// Returns a `Result` with either:
-    /// - `Ok(HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)>)`: A hash map where each key is an
-    ///   assignment ID, and the value is a tuple containing the `AssignmentInfo` and an `Option` for the
-    ///   latest `Submission`.
-    /// - `Err(Box<dyn std::error::Error>)`: Encapsulates any errors encountered during the API calls or
-    ///   data processing.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let client = reqwest::blocking::Client::new();
-    /// let assignments = Arc::new(vec![/* Assignment objects */]);
-    /// let interaction = || { /* interaction logic here */ };
-    /// match student.fetch_assignments_and_latest_submissions(&client, assignments, interaction) {
-    ///     Ok(data) => println!("Assignments and submissions: {:?}", data),
-    ///     Err(e) => eprintln!("Error: {:?}", e),
-    /// }
-    /// ```
+    /// Returns:
+    /// - `Result<HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)>, Box<dyn std::error::Error>>`: A result
+    ///   containing a map of assignment IDs to tuples of `AssignmentInfo` and the latest `Submission`, or an error.
     pub fn fetch_assignments_and_latest_submissions<F>(
         &self,
         client: &reqwest::blocking::Client,

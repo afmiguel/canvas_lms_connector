@@ -1,24 +1,22 @@
+// Import necessary crates and modules
 use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use crate::CourseInfo;
 
-
-/// Contains detailed information about an assignment in the Canvas system.
+/// Structure to hold detailed information about an assignment in the Canvas system.
 ///
-/// This structure is used to store and manage data specific to an assignment within a Canvas course.
-/// It includes key details such as the assignment's unique identifier, its name, and a description (if provided).
-/// Additionally, the structure holds a reference to `CourseInfo`, linking the assignment to its respective
-/// course context and providing necessary information for API interactions.
+/// This struct is essential for representing an assignment in the context of the Canvas Learning Management System (LMS).
+/// It includes several fields to store the key details of an assignment, and a shared reference to the `CourseInfo` structure,
+/// connecting the assignment with its associated course and enabling API interactions.
 ///
-/// # Fields
-///
-/// - `id`: The unique identifier of the assignment in the Canvas system.
+/// Fields:
+/// - `id`: Unique identifier for the assignment in the Canvas system.
 /// - `name`: The name of the assignment.
-/// - `description`: An optional description of the assignment.
-/// - `course_info`: A shared reference (`Arc`) to `CourseInfo` containing course-specific details and API credentials.
+/// - `description`: Optional detailed description of the assignment.
+/// - `course_info`: A thread-safe reference (`Arc`) to the `CourseInfo` struct, which contains course-specific details and API credentials.
 ///
-/// The `AssignmentInfo` structure is central to operations involving assignment data in the Canvas LMS, such as
-/// fetching, updating, and managing assignments and their related activities.
+/// The use of `Arc<CourseInfo>` ensures that the `CourseInfo` data can be safely shared and accessed across multiple threads,
+/// which is crucial for concurrent processing in web applications or multi-threaded environments.
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct AssignmentInfo {
     pub id: u64,
@@ -28,21 +26,19 @@ pub struct AssignmentInfo {
     pub course_info: Arc<CourseInfo>,
 }
 
-/// Represents an assignment within the Canvas Learning Management System.
+/// High-level structure representing an assignment within the Canvas Learning Management System.
 ///
-/// This structure encapsulates the details of a specific assignment in a Canvas course. It primarily
-/// consists of `AssignmentInfo`, which contains essential information like the assignment's ID, name,
-/// and optional description. The `Assignment` struct serves as a high-level representation of an assignment
-/// in Canvas, facilitating the access to and manipulation of assignment-related data in various operations
-/// and API interactions.
+/// This struct serves as a wrapper around the `AssignmentInfo` struct, providing a more abstracted representation
+/// of an assignment. It is particularly useful in scenarios where assignment-related operations are performed,
+/// such as fetching, updating, or displaying assignment details. The use of `Arc<AssignmentInfo>` allows for efficient
+/// sharing and management of `AssignmentInfo` data across different components or threads of an application.
 ///
-/// # Fields
+/// Fields:
+/// - `info`: A thread-safe, shared reference (`Arc`) to an `AssignmentInfo` instance. This encapsulates all the
+///   detailed information about the assignment, such as its ID, name, description, and related course information.
 ///
-/// - `info`: A shared reference (`Arc`) to an `AssignmentInfo` instance containing detailed information
-///   about the assignment.
-///
-/// The `Assignment` struct is a key component in applications interacting with the Canvas API, providing a
-/// convenient and unified way to handle assignment-related data.
+/// The `Assignment` struct is a fundamental part of any application that interacts with the Canvas API for assignment-related
+/// functionalities, simplifying the handling of assignments and their associated data.
 #[derive(Debug, Clone)]
 pub struct Assignment {
     pub info: Arc<AssignmentInfo>,

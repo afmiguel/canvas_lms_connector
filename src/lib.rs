@@ -1,67 +1,67 @@
 //! # Canvas API Integration Library
 //!
-//! This library provides a range of functionalities for interacting with the Canvas Learning Management System API.
-//! It supports operations such as course retrieval, student management, and handling of assignments and submissions.
-//! The library uses the `reqwest` library for making HTTP requests and implements concurrency control to limit the number of simultaneous requests.
+//! This Rust library provides functionalities for interacting with the Canvas Learning Management System (LMS) API.
+//! It simplifies tasks like retrieving course information, managing student data, and processing assignments and submissions.
+//! The library utilizes the `reqwest` crate for HTTP requests and incorporates concurrency control for efficient request handling.
 //!
 //! ## Core Features
 //!
-//! - **Authentication and Configuration:** Load Canvas API credentials from configuration files or the system keyring.
-//! - **Course Management:** Retrieve information about courses available to an authenticated user.
-//! - **Student Management:** Fetch students enrolled in specific courses.
-//! - **Assignments and Submissions Handling:** Retrieve and update assignments and student submissions.
+//! - **Authentication and Configuration:** Handles Canvas API credentials, supporting both file-based and system keyring storage.
+//! - **Course Management:** Facilitates access to course information, enabling users to interact with course details.
+//! - **Student Management:** Provides functionalities to manage student data within courses.
+//! - **Assignments and Submissions Handling:** Allows for retrieval and updating of assignment information and student submissions.
 //!
 //! ## Usage
 //!
-//! To use this library, add it as a dependency in your `Cargo.toml`. Then, utilize the structures and functions
-//! provided to interact with the Canvas API as needed for your application.
+//! To use this library, add it as a dependency in your `Cargo.toml`. Use the provided structures and functions
+//! to interact with the Canvas API as per your application's requirements.
 //!
 //! ```toml
 //! [dependencies]
 //! canvas_lms_connector = "0.1"
 //! ```
 //!
-//! After adding the dependency, you can start using the library's features in your code.
+//! After adding the library as a dependency, you can use its features in your Rust application.
 //!
-//! The entry point is the function `fetch_courses`, which can be used to retrieve courses.
-//! The function takes a closure as an argument, which is used to specify the type of course retrieval.
-//! The closure should take a reference to `CanvasInfo` and return a `CanvasResult`.
-//! The `CanvasResult` enum encapsulates the possible outcomes of the operation, including successful
-//! retrieval of courses or various types of errors.
-//! The `fetch_courses` function handles credential management and error handling, while the closure
-//! specifies the specific course retrieval logic.
-//! This approach allows for flexibility in the way courses are retrieved, while ensuring that the
-//! authentication and error handling are handled in a consistent way.
+//! The primary functions are `fetch_courses_with_credentials` and `fetch_single_course_with_credentials`.
+//! - `fetch_courses_with_credentials` retrieves a list of courses using provided Canvas API credentials.
+//! - `fetch_single_course_with_credentials` fetches details of a specific course using the given credentials.
 //!
-//! The following example demonstrates the usage of `fetch_courses` to retrieve courses using
-//! credentials stored in the system keyring.
+//! Both functions require a reference to `CanvasCredentials`, which contain the necessary API URL and token.
+//! They return results encapsulated in `CanvasResultCourses` or `CanvasResultSingleCourse` enums,
+//! representing either successful data retrieval or an error (connection or credential issues).
 //!
-//! # Examples
+//! ### Examples
 //!
-//! ```
-//! match Canvas::fetch_courses(|credential| Canvas::fetch_courses_with_credentials(credential)) {
-//!     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
-//!     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
-//!     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+//! Fetching a list of courses:
+//! ```rust
+//! let canvas_credentials = CanvasCredentials { /* ... */ };
+//! match Canvas::fetch_courses_with_credentials(&canvas_credentials) {
+//!     CanvasResultCourses::Ok(courses) => println!("Courses: {:?}", courses),
+//!     CanvasResultCourses::ErrConnection(err) => eprintln!("Connection error: {}", err),
+//!     CanvasResultCourses::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
 //! }
 //! ```
-//! or
-//!  ```
+//!
+//! Fetching a specific course by ID:
+//! ```rust
+//! let canvas_credentials = CanvasCredentials { /* ... */ };
 //! let course_id = 123;
-//! match Canvas::fetch_courses(|credential| Canvas::fetch_single_course_with_credentials(credential, course_id)) {
-//!     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
-//!     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
-//!     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+//! match Canvas::fetch_single_course_with_credentials(&canvas_credentials, course_id) {
+//!     CanvasResultSingleCourse::Ok(course) => println!("Course: {:?}", course),
+//!     CanvasResultSingleCourse::ErrConnection(err) => eprintln!("Connection error: {}", err),
+//!     CanvasResultSingleCourse::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
 //! }
 //! ```
-mod connection;
-pub mod credentials;
-mod course;
-mod student;
-mod assignment;
-mod submission;
-mod canvas;
+mod connection; // Manages HTTP connections and requests to the Canvas API.
+pub mod credentials; // Handles the storage and retrieval of Canvas API credentials.
+mod course; // Contains functionalities related to Canvas courses.
+mod student; // Deals with operations related to students in Canvas courses.
+mod assignment; // Manages assignments within Canvas courses.
+mod submission; // Handles submissions for assignments in Canvas.
+mod canvas; // Core module for interfacing with the Canvas LMS.
 
+// Exports key structures for external use.
 pub use credentials::CanvasCredentials;
 pub use course::{Course, CourseInfo};
 pub use student::{Student, StudentInfo};
@@ -71,8 +71,12 @@ pub use canvas::{Canvas, CanvasResultCourses, CanvasResultSingleCourse};
 
 #[cfg(test)]
 mod tests {
-    // use super::*;
-
-    #[test]
-    fn it_works() {}
+    // Test implementations for library functionalities.
+    // Example:
+    // #[test]
+    // fn test_fetch_courses() {
+    //     let credentials = CanvasCredentials::load_from_file("path/to/credentials");
+    //     let result = Canvas::fetch_courses_with_credentials(&credentials);
+    //     assert!(matches!(result, CanvasResultCourses::Ok(_)));
+    // }
 }

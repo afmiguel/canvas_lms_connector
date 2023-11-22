@@ -2,79 +2,90 @@ use crate::connection::{send_http_request, HttpMethod};
 use crate::{CanvasCredentials, Course, CourseInfo};
 use std::sync::Arc;
 
+/// Enum to represent the result of fetching multiple courses.
+///
+/// This enum provides a structured way to handle the outcomes of attempting to fetch a list of courses
+/// from the Canvas LMS, distinguishing between successful retrieval, connection errors, and credential errors.
 pub enum CanvasResultCourses {
-    Ok(Vec<Course>),
-    ErrConnection(String),
-    ErrCredentials(String),
+    Ok(Vec<Course>),           // Success case with a vector of Course objects.
+    ErrConnection(String),     // Connection error with a descriptive message.
+    ErrCredentials(String),    // Credential error with a descriptive message.
 }
 
+/// Enum to represent the result of fetching a single course.
+///
+/// Similar to `CanvasResultCourses`, but tailored for scenarios where only a single course is being fetched.
+/// Distinguishes between success, connection errors, and credential errors.
 pub enum CanvasResultSingleCourse {
-    Ok(Course),
-    ErrConnection(String),
-    ErrCredentials(String),
+    Ok(Course),                // Success case with a single Course object.
+    ErrConnection(String),     // Connection error with a descriptive message.
+    ErrCredentials(String),    // Credential error with a descriptive message.
 }
 
-/// Represents the main interface for interacting with the Canvas Learning Management System (LMS).
+
+/// Main interface for interacting with the Canvas LMS.
 ///
-/// This structure provides methods for performing various operations related to the Canvas LMS,
-/// such as fetching courses or handling authentication. It acts as a central point for accessing
-/// the functionalities offered by the Canvas API.
+/// `Canvas` struct is designed as a centralized point for accessing Canvas LMS functionalities.
+/// It enables operations like fetching courses and handling authentication, encapsulating the logic
+/// for Canvas API interactions.
 ///
-/// # Examples
-///
+/// Example:
 /// ```
-/// // Example of using the Canvas struct to fetch courses
+/// let canvas_credentials = CanvasCredentials { /* initialization */ };
 /// let canvas = Canvas { /* fields initialization */ };
-/// match canvas.fetch_courses_with_credentials(&canvas_info) {
-///     Ok(courses) => println!("Courses retrieved: {:?}", courses),
-///     Err(e) => eprintln!("Error fetching courses: {:?}", e),
+/// match canvas.fetch_courses_with_credentials(&canvas_credentials) {
+///     CanvasResultCourses::Ok(courses) => println!("Courses: {:?}", courses),
+///     CanvasResultCourses::ErrConnection(err) => eprintln!("Connection error: {}", err),
+///     CanvasResultCourses::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
 /// }
 /// ```
 pub struct Canvas {
     // info: Arc<CanvasInfo>,
 }
 
-/// Implementation of Canvas struct functionalities.
+/// Implementation block for the `Canvas` struct.
 ///
-/// Provides methods to interact with the Canvas Learning Management System (LMS),
-/// encapsulating the logic for operations such as fetching courses, managing credentials,
-/// and other interactions with the Canvas API.
+/// This section provides various methods to interact with the Canvas LMS, encapsulating the logic
+/// necessary for operations like fetching course lists, retrieving individual course details,
+/// managing Canvas credentials, and other API interactions specific to the Canvas system.
+///
+/// The methods are designed to streamline the process of communicating with the Canvas API,
+/// handling authentication, data retrieval, and error management.
 ///
 /// # Methods
 ///
-/// - `fetch_courses_with_credentials`: Fetches courses using specific Canvas credentials.
-/// - `fetch_courses`: Retrieves courses using stored or system-provided credentials.
-/// - `load_credentials_from_file`: Loads Canvas credentials from a configuration file.
-/// - `load_credentials_from_system`: Loads Canvas credentials stored in the system keyring.
+/// - `fetch_courses_with_credentials`: Fetches a list of courses using specific Canvas credentials.
+///   It's useful when you have multiple Canvas accounts or need to access courses under different credentials.
 ///
-/// Each method focuses on a specific aspect of Canvas LMS interaction, ensuring ease of use
-/// in various application contexts.
+/// - `fetch_single_course_with_credentials`: Retrieves detailed information about a specific course,
+///   identified by its ID, using the provided Canvas credentials. This method is particularly useful for
+///   applications or services that need to focus on a single course at a time, such as a course management
+///   dashboard or a student information system.
+///
+/// - `convert_json_to_course`: A utility function within the `Canvas` context, used by other methods to
+///   transform JSON data received from the Canvas API into a structured `Course` object. This function
+///   encapsulates the parsing logic, ensuring consistent conversion across different parts of the application.
+///
+/// Each of these methods is designed to target a specific aspect of Canvas LMS interaction, ensuring that
+/// the `Canvas` struct can be used flexibly in various application contexts.
 impl Canvas {
-    /// Fetches a list of courses from the Canvas API using the provided credentials.
+    /// Fetches a list of courses using provided Canvas credentials.
     ///
-    /// This function attempts to retrieve all courses accessible with the given Canvas credentials.
-    /// It utilizes the Canvas API endpoint to gather course information, authenticating the request
-    /// with the credentials supplied in the `CanvasInfo` structure.
+    /// Communicates with the Canvas API to retrieve accessible courses. Requires valid Canvas API credentials.
+    /// Handles pagination to ensure all courses are fetched.
     ///
-    /// # Arguments
+    /// Arguments:
+    /// - `info`: Reference to `CanvasCredentials` containing API URL and token.
     ///
-    /// * `info` - A reference to `CanvasInfo` containing the URL and API token for Canvas API access.
+    /// Returns:
+    /// - `CanvasResultCourses`: Enum indicating success with course list or an error.
     ///
-    /// # Returns
-    ///
-    /// A `CanvasResult` enum, which can be either:
-    /// - `CanvasResult::Ok(Vec<Course>)` on successful retrieval of courses.
-    /// - `CanvasResult::ErrConnection(String)` for connection-related errors.
-    /// - `CanvasResult::ErrCredentials(String)` for authentication failures.
-    ///
-    /// # Examples
-    ///
+    /// Example:
     /// ```
-    /// let canvas_info = CanvasInfo { /* fields initialization */ };
-    /// match fetch_courses_with_credentials(&canvas_info) {
-    ///     CanvasResult::Ok(courses) => println!("Courses fetched: {:?}", courses),
-    ///     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
-    ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+    /// let canvas_info = CanvasCredentials { /* initialization */ };
+    /// match Canvas::fetch_courses_with_credentials(&canvas_info) {
+    ///     CanvasResultCourses::Ok(courses) => /* handle courses */,
+    ///     // Handle errors...
     /// }
     /// ```
     pub fn fetch_courses_with_credentials(info: &CanvasCredentials) -> CanvasResultCourses {
@@ -126,32 +137,24 @@ impl Canvas {
         CanvasResultCourses::Ok(all_courses)
     }
 
-    /// Fetches details of a specific course from the Canvas API using provided credentials.
+    /// Fetches a specific course using provided credentials.
     ///
-    /// This function retrieves information about a single course, identified by `course_id`, using the credentials
-    /// provided in `info`. It communicates with the Canvas API and returns the course data in a `CanvasResult`.
+    /// Retrieves details of a single course based on its ID. Utilizes Canvas credentials for authentication.
     ///
-    /// # Arguments
+    /// Arguments:
+    /// - `info`: Canvas API credentials.
+    /// - `course_id`: ID of the course to fetch.
     ///
-    /// * `info` - A reference to `CanvasInfo` containing the URL and API token for Canvas API access.
-    /// * `course_id` - The unique identifier for the course to be fetched.
+    /// Returns:
+    /// - `CanvasResultSingleCourse`: Enum indicating success with the course or an error.
     ///
-    /// # Returns
-    ///
-    /// A `CanvasResult` enum, which is either:
-    /// - `CanvasResult::Ok(Vec<Course>)` on successful retrieval of the course.
-    /// - `CanvasResult::ErrConnection(String)` for connection-related errors.
-    /// - `CanvasResult::ErrCredentials(String)` for authentication failures.
-    ///
-    /// # Examples
-    ///
+    /// Example:
     /// ```
-    /// let canvas_info = CanvasInfo { /* fields initialization */ };
+    /// let canvas_info = CanvasCredentials { /* initialization */ };
     /// let course_id = 123;
-    /// match fetch_single_course_with_credentials(&canvas_info, course_id) {
-    ///     CanvasResult::Ok(course) => println!("Course fetched: {:?}", course),
-    ///     CanvasResult::ErrConnection(err) => eprintln!("Connection error: {}", err),
-    ///     CanvasResult::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
+    /// match Canvas::fetch_single_course_with_credentials(&canvas_info, course_id) {
+    ///     CanvasResultSingleCourse::Ok(course) => /* handle course */,
+    ///     // Handle errors...
     /// }
     /// ```
     pub fn fetch_single_course_with_credentials(
@@ -188,30 +191,22 @@ impl Canvas {
         }
     }
 
-    /// Converts a JSON object to a `Course` structure.
+    /// Converts a JSON object to a `Course`.
     ///
-    /// This function takes a JSON representation of a course, typically obtained from the Canvas API,
-    /// and transforms it into a `Course` object. It extracts necessary information such as the course's
-    /// ID, name, and code from the JSON object and associates it with the provided `CanvasInfo`.
+    /// Parses JSON data from the Canvas API to construct a `Course` object.
     ///
-    /// # Arguments
+    /// Arguments:
+    /// - `canvas_info`: Shared credentials reference.
+    /// - `course`: JSON object representing a course.
     ///
-    /// * `canvas_info` - A shared reference to the `CanvasInfo` containing Canvas API credentials.
-    /// * `course` - A reference to the JSON object representing a course as returned by the Canvas API.
+    /// Returns:
+    /// - `Option<Course>`: A course if successful, or `None` if conversion fails.
     ///
-    /// # Returns
-    ///
-    /// Returns `Some(Course)` if the conversion is successful, or `None` if the required fields are not present
-    /// in the JSON object or cannot be properly parsed.
-    ///
-    /// # Examples
-    ///
+    /// Example:
     /// ```
-    /// let canvas_info = Arc::new(CanvasInfo { /* fields initialization */ });
-    /// let course_json = serde_json::json!({ /* course data in JSON format */ });
-    /// if let Some(course) = convert_json_to_course(&canvas_info, &course_json) {
-    ///     println!("Course converted: {:?}", course);
-    /// }
+    /// let canvas_info = Arc::new(CanvasCredentials { /* initialization */ });
+    /// let course_json = serde_json::json!({ /* JSON data */ });
+    /// let course = Canvas::convert_json_to_course(&canvas_info, &course_json);
     /// ```
     fn convert_json_to_course(
         canvas_info: &Arc<CanvasCredentials>,
