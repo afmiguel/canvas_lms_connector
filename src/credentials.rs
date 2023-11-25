@@ -267,19 +267,6 @@ mod tests {
         assert_eq!(credentials.token_canvas, "secret-token");
     }
 
-    // #[test]
-    // #[cfg(feature = "use_file_credentials")]
-    // fn test_load_credentials_from_file() {
-    //     let expected_credentials = CanvasCredentials {
-    //         url_canvas: String::from("https://example.com"),
-    //         token_canvas: String::from("secret-token")
-    //     };
-    //
-    //     let credentials = CanvasCredentials::load_credentials_from_file().unwrap();
-    //
-    //     assert_eq!(credentials, expected_credentials);
-    // }
-
     #[test]
     fn test_load_credentials_from_system() {
         // Este teste dependerá de como as credenciais são carregadas do sistema.
