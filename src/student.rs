@@ -41,6 +41,7 @@ pub struct StudentInfo {
 ///
 /// This struct is central to handling student data efficiently, especially in scenarios requiring concurrent access
 /// to the same student information.
+#[derive(Debug)]
 pub struct Student {
     pub info: Arc<StudentInfo>,
 }
