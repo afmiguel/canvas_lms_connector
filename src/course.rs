@@ -1,5 +1,6 @@
 // Necessary imports from standard and external crates.
 use std::sync::Arc;
+//use lazy_static::lazy::Lazy;
 use serde::{Deserialize, Serialize};
 use crate::{CanvasCredentials};
 use crate::connection::{send_http_request, HttpMethod};

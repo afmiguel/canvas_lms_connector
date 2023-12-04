@@ -68,7 +68,7 @@ lazy_static! {
 ///
 /// Error handling is basic, with network or client errors resulting in a generic error code (0).
 /// This function is designed to be called within a retry loop implemented in `send_http_request`.
-fn send_http_request_single_try(
+fn send_http_request_single_attempt(
     client: &reqwest::blocking::Client,
     method: HttpMethod,
     url: &str,
@@ -124,7 +124,7 @@ pub fn send_http_request(
     // The function `send_http_request_single_try` is called repeatedly until a successful
     // response is received or the maximum number of attempts is reached.
     while attempts < max_attempts {
-        match send_http_request_single_try(client, method.clone(), url, canvas_info, params.clone())
+        match send_http_request_single_attempt(client, method.clone(), url, canvas_info, params.clone())
         {
             Ok(response) => return Ok(response),
             Err(status) if status == 403 && attempts < max_attempts - 1 => {

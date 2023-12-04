@@ -59,7 +59,7 @@ mod course; // Contains functionalities related to Canvas courses.
 mod student; // Deals with operations related to students in Canvas courses.
 mod assignment; // Manages assignments within Canvas courses.
 mod submission; // Handles submissions for assignments in Canvas.
-mod canvas; // Core module for interfacing with the Canvas LMS.
+mod canvas;
 
 // Exports key structures for external use.
 pub use credentials::CanvasCredentials;

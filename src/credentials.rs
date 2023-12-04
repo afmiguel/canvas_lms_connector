@@ -268,14 +268,55 @@ mod tests {
     }
 
     #[test]
-    fn test_load_credentials_from_system() {
-        // Este teste dependerá de como as credenciais são carregadas do sistema.
-        // Pode ser necessário configurar um ambiente de teste ou usar mocks.
-    }
+    #[cfg(feature = "use_env_credentials")]
+    fn test_load_credentials_from_env() {
+        use std::collections::HashMap;
+        use std::env;
 
-    #[test]
-    fn test_load_credentials() {
-        // Este teste dependerá da lógica específica da função load_credentials.
-        // Será necessário verificar as condições sob as quais diferentes métodos de carregamento de credenciais são usados.
+        let mut map: HashMap<String, String> = HashMap::new();
+        fn set_new_key(map: &mut HashMap<String, String>, key: &str, value: &str) {
+            if let Ok(value) = env::var(key) {
+                map.insert(key.to_string(), value);
+            }
+            env::set_var(key, value);
+        }
+
+        fn restore_key(map: &HashMap<String, String>, key: &str) {
+            if let Some(value) = map.get(key) {
+                env::set_var(key, value);
+            } else {
+                env::remove_var(key);
+            }
+        }
+
+        let cavas_url_key = "CANVAS_URL";
+        let canvas_token_key = "CANVAS_TOKEN";
+
+        set_new_key(&mut map, cavas_url_key, "https://example.com");
+        set_new_key(&mut map, canvas_token_key, "secret-token");
+
+        // Test both variables set
+        let both_credentials = CanvasCredentials::load_credentials_from_env();
+
+        // Test only URL set
+        env::remove_var(canvas_token_key);
+        let only_url = CanvasCredentials::load_credentials_from_env();
+
+        // Teste only token set
+        env::remove_var(cavas_url_key);
+        env::set_var(canvas_token_key, "secret-token");
+        let only_token = CanvasCredentials::load_credentials_from_env();
+
+        // Test no variables set
+        env::remove_var(cavas_url_key);
+        let no_credentials = CanvasCredentials::load_credentials_from_env();
+
+        restore_key(&map, canvas_token_key);
+        restore_key(&map, cavas_url_key);
+
+        assert!(both_credentials.is_ok());
+        assert!(only_url.is_err());
+        assert!(only_token.is_err());
+        assert!(no_credentials.is_err());
     }
 }
