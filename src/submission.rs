@@ -1,11 +1,10 @@
 use std::error::Error;
 // Import necessary crates and modules
-use crate::{Course, StudentInfo, canvas};
+use crate::{canvas, Course, StudentInfo};
 use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "snake_case")]
@@ -19,11 +18,22 @@ pub enum SubmissionType {
     Other,
 }
 
-
-
 impl Default for SubmissionType {
     fn default() -> Self {
         SubmissionType::None
+    }
+}
+
+impl SubmissionType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SubmissionType::OnlineUpload => "online_upload",
+            SubmissionType::OnlineTextEntry => "online_text_entry",
+            SubmissionType::OnlineUrl => "online_url",
+            SubmissionType::MediaRecording => "media_recording",
+            SubmissionType::None => "none",
+            SubmissionType::Other => "other",
+        }
     }
 }
 
@@ -49,17 +59,16 @@ impl Default for SubmissionType {
 /// Enum representing the type of submission.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Submission {
-    pub id: u64,                               // Submission's unique identifier
-    pub assignment_id: u64,                    // Assignment's unique identifier
-    pub score: Option<f64>,                    // Graded score, optional
-    pub submitted_at: Option<DateTime<Utc>>,   // Submission timestamp, optional
-    pub submission_type: Option<SubmissionType>,  // Tipo de submissão, agora tratado como Option
+    pub id: u64,                                 // Submission's unique identifier
+    pub assignment_id: u64,                      // Assignment's unique identifier
+    pub score: Option<f64>,                      // Graded score, optional
+    pub submitted_at: Option<DateTime<Utc>>,     // Submission timestamp, optional
+    pub submission_type: Option<SubmissionType>, // Tipo de submissão, agora tratado como Option
     #[serde(skip)]
     pub student: Arc<StudentInfo>,
     #[serde(skip)]
-    pub file_ids: Vec<u64>,                    // IDs dos arquivos associados
+    pub file_ids: Vec<u64>, // IDs dos arquivos associados
 }
-
 
 impl Submission {
     /// Adds a file comment to a student's assignment submission.
@@ -133,7 +142,8 @@ impl Submission {
             info: self.student.course_info.clone(),
         };
 
-        let ret = course.update_assignment_score(client, self.assignment_id, self.student.id, new_score);
+        let ret =
+            course.update_assignment_score(client, self.assignment_id, self.student.id, new_score);
         self.score = new_score;
         ret
     }
@@ -172,7 +182,7 @@ impl Submission {
             // Faz o download do arquivo e obtém o caminho completo onde foi salvo
             let file_path = canvas::download_submission_file(
                 client,
-                &self.student.course_info.canvas_info,  // Passa as credenciais do Canvas
+                &self.student.course_info.canvas_info, // Passa as credenciais do Canvas
                 file_id,
                 output_dir, // Caminho onde o arquivo será salvo
             )?;
@@ -181,7 +191,7 @@ impl Submission {
             downloaded_files.push(file_path);
         }
 
-//        println!("All files downloaded for submission {}", self.id);
+        //        println!("All files downloaded for submission {}", self.id);
 
         // Retorna a lista de caminhos completos dos arquivos baixados
         Ok(downloaded_files)

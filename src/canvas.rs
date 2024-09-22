@@ -911,16 +911,24 @@ pub fn convert_json_to_assignment(
     // Verifica se existe uma rubrica associada e extrai o ID, se disponível
     let rubric_id = assignment["rubric_settings"]["id"].as_u64();
 
+    // Verifica se existe a data de vencimento (due_at) e a parseia se disponível
+    let due_at = assignment["due_at"]
+        .as_str()
+        .map(|due_str| DateTime::parse_from_rfc3339(due_str).ok().map(|dt| dt.with_timezone(&Utc)))
+        .flatten(); // Transforma o Result em Option e remove erros de parsing
+
     Some(Assignment {
         info: Arc::new(AssignmentInfo {
             id,
             name,
             description,
             rubric_id,                            // Armazena o ID da rubrica
+            due_at,                               // Adiciona o campo due_at (opcional)
             course_info: Arc::clone(course_info), // Mantém a referência ao CourseInfo
         }),
     })
 }
+
 
 pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Error>> {
     let url = format!(
@@ -1263,6 +1271,7 @@ pub fn create_announcement(
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
+use chrono::{DateTime, Utc};
 
 /// Downloads a submission file from the Canvas LMS.
 ///
