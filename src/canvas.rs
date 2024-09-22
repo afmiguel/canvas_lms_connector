@@ -14,6 +14,8 @@ use std::error::Error;
 use std::sync::Arc;
 use std::thread::sleep;
 use serde_json::json;
+use std::path::Path;
+use urlencoding::decode;
 
 /// Enum to represent the result of fetching multiple courses.
 ///
@@ -730,6 +732,7 @@ pub fn get_all_submissions(
     Ok(all_submissions)
 }
 
+/// Função para buscar as submissões de um estudante para várias tarefas e carregar os file_ids.
 pub fn fetch_submissions_for_assignments<F>(
     client: &Client,
     canvas_info: &CanvasCredentials,
@@ -743,39 +746,119 @@ where
 {
     let mut submissions = Vec::new();
 
+    // for &assignment_id in assignment_ids {
+    //     let url = format!(
+    //         "{}/courses/{}/assignments/{}/submissions/{}",
+    //         canvas_info.url_canvas, course_id, assignment_id, user_id
+    //     );
+    //
+    //     // Não são necessários parâmetros adicionais para esta chamada de API específica
+    //     let params = Vec::new(); // Sem parâmetros adicionais para a requisição GET
+    //
+    //     interaction();
+    //
+    //     // Try to send the HTTP request SYNC_ATTEMPT times
+    //     for attempt in 0..SYNC_ATTEMPT {
+    //         let response = send_http_request(
+    //             client,
+    //             HttpMethod::Get, // Método GET
+    //             &url,            // URL da API
+    //             &canvas_info,    // Token de acesso
+    //             params.clone(),  // Parâmetros da requisição
+    //         );
+    //
+    //         match response {
+    //             Ok(response) => {
+    //                 if response.status().is_success() {
+    //                     let mut submission: Submission = response.json()?; // Deserializar a resposta JSON para um objeto Submission
+    //
+    //                     // Extrair os IDs dos arquivos anexados à submissão (se houver)
+    //                     let file_ids = if let Some(attachments) = response.json::<Value>()?["attachments"].as_array() {
+    //                         attachments
+    //                             .iter()
+    //                             .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
+    //                             .collect()
+    //                     } else {
+    //                         Vec::new() // Caso não haja arquivos, retorna um vetor vazio
+    //                     };
+    //
+    //                     // Atribuir os file_ids extraídos à submissão
+    //                     submission.file_ids = file_ids;
+    //
+    //                     submissions.push(submission);
+    //                 } else {
+    //                     let error_message = response.text()?;
+    //                     return Err(Box::new(std::io::Error::new(
+    //                         std::io::ErrorKind::Other,
+    //                         format!(
+    //                             "Failed to fetch submissions with error: {} (a)",
+    //                             error_message
+    //                         ),
+    //                     )));
+    //                 }
+    //                 break;
+    //             }
+    //             Err(e) => {
+    //                 if attempt == SYNC_ATTEMPT - 1 {
+    //                     return Err(Box::new(std::io::Error::new(
+    //                         std::io::ErrorKind::Other,
+    //                         format!("Failed to fetch submissions with error: {} (b)", e),
+    //                     )));
+    //                 } else {
+    //                     sleep(Duration::from_millis(100));
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
     for &assignment_id in assignment_ids {
-        // update_carrossel();
         let url = format!(
             "{}/courses/{}/assignments/{}/submissions/{}",
             canvas_info.url_canvas, course_id, assignment_id, user_id
         );
 
-        // Não são necessários parâmetros adicionais para esta chamada de API específica
-        let params = Vec::new(); // Sem parâmetros adicionais para a requisição GET
+        let params = Vec::new();
 
         interaction();
-        // Try to send the HTTP request SYNC_ATTEMPT times
+
         for attempt in 0..SYNC_ATTEMPT {
             let response = send_http_request(
                 client,
-                HttpMethod::Get, // Método GET
-                &url,            // URL da API
-                &canvas_info,    // Token de acesso
-                params.clone(),  // Parâmetros da requisição
+                HttpMethod::Get,
+                &url,
+                canvas_info,
+                params.clone(),
             );
+
             match response {
                 Ok(response) => {
                     if response.status().is_success() {
-                        let submission: Submission = response.json()?; // Deserializar a resposta JSON para um objeto Submission
+                        // Deserializar o JSON da resposta uma vez
+                        let response_json: Value = response.json()?; // Armazenando o JSON da resposta
+
+                        // Deserializar a submissão do JSON
+                        let mut submission: Submission = serde_json::from_value(response_json.clone())?; // Usando clone para reutilizar o JSON
+
+                        // Extrair os file_ids dos anexos (se houver)
+                        let file_ids = if let Some(attachments) = response_json["attachments"].as_array() {
+                            attachments
+                                .iter()
+                                .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
+                                .collect()
+                        } else {
+                            Vec::new() // Caso não haja arquivos, retorna um vetor vazio
+                        };
+
+                        // Atribuir os file_ids extraídos à submissão
+                        submission.file_ids = file_ids;
+
                         submissions.push(submission);
                     } else {
                         let error_message = response.text()?;
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            format!(
-                                "Failed to fetch submissions with error: {} (a)",
-                                error_message
-                            ),
+                            format!("Failed to fetch submissions with error: {} (a)", error_message),
                         )));
                     }
                     break;
@@ -787,14 +870,16 @@ where
                             format!("Failed to fetch submissions with error: {} (b)", e),
                         )));
                     } else {
-                        sleep(std::time::Duration::from_millis(100));
+                        sleep(Duration::from_millis(100));
                     }
                 }
             }
         }
     }
+
     Ok(submissions)
 }
+
 
 pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
     let url = format!(
@@ -1229,5 +1314,90 @@ pub fn create_announcement(
             std::io::ErrorKind::Other,
             format!("Failed to create announcement with error: {}", e),
         ))),
+    }
+}
+
+use std::fs::File;
+use std::io::Write;
+use std::time::Duration;
+
+/// Downloads a submission file from the Canvas LMS.
+///
+/// This function sends an HTTP request to retrieve a file related to a submission
+/// using the Canvas API. It saves the downloaded file locally at the specified path.
+///
+/// # Arguments
+/// - `client`: The reqwest client for making the HTTP request.
+/// - `canvas_info`: The CanvasCredentials containing API authentication details.
+/// - `file_id`: The ID of the file to be downloaded.
+/// - `output_directory`: The path where the file will be saved locally.
+///
+/// # Returns
+/// - `Result<(), Box<dyn Error>>`: Returns Ok on success or an Error on failure.
+pub fn download_submission_file(
+    client: &Client,
+    canvas_info: &CanvasCredentials,
+    file_id: u64,
+    output_directory: &str, // Directory where the file will be saved
+) -> Result<String, Box<dyn std::error::Error>> {
+    // Constructing the URL to get the file metadata
+    let metadata_url = format!(
+        "{}/files/{}",
+        canvas_info.url_canvas, file_id
+    );
+
+    // First, make the request to get the file metadata
+    let response = send_http_request(
+        client,
+        HttpMethod::Get, // GET method to retrieve metadata
+        &metadata_url,
+        canvas_info,
+        Vec::new(), // No additional parameters
+    )?;
+
+    if response.status().is_success() {
+        // Parsing the file metadata
+        let metadata: Value = response.json()?;
+
+        // Extracting the original file name and the download URL
+        if let (Some(file_name_encoded), Some(download_url)) = (metadata["filename"].as_str(), metadata["url"].as_str()) {
+            // Decode the file name (removes encoded characters)
+            let file_name_decoded = decode(file_name_encoded)?.into_owned();
+            let file_name = file_name_decoded.replace("+", " "); // Replaces '+' with spaces
+
+            // Construct the full path where the file will be saved
+            let output_path = Path::new(output_directory).join(&file_name);
+
+            // Now make the request to download the actual file using the download URL
+            let file_response = client.get(download_url).send()?;
+
+            if file_response.status().is_success() {
+                // Save the file content to the specified output path
+                let mut file = File::create(&output_path)?;
+                let content = file_response.bytes()?;
+                file.write_all(&content)?;
+
+                // println!("File '{}' successfully downloaded to: {}", file_name, output_path.display());
+                Ok(output_path.to_string_lossy().into_owned()) // Return the path to the saved file
+            } else {
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "Failed to download the file. Status: {}",
+                        file_response.status()
+                    ),
+                )))
+            }
+        } else {
+            Err(Box::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "The download URL or file name was not found in the metadata.".to_string(),
+            )))
+        }
+    } else {
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to retrieve file metadata. Status: {}", response.status()),
+        )))
     }
 }

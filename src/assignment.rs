@@ -69,7 +69,7 @@ impl Assignment {
             Err(e) => {
                 return Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to fetch submissions with error: {} (a)", e),
+                    format!("Failed to fetch submissions with error: {}", e),
                 )));
             }
         }
@@ -81,21 +81,30 @@ impl Assignment {
     ) -> Option<Submission> {
         // Encontra qual é o estudante respectivo user_id
         for student in students {
-            match j["user_id"].as_u64() {
-                Some(user_id) => {
-                    if student.info.id == user_id {
-                        return Some(Submission {
-                            id: j["id"].as_u64().unwrap(),                             // Submission's unique identifier
-                            assignment_id: j["assignment_id"].as_u64().unwrap(),                  // Assignment's unique identifier
-                            score: j["score"].as_f64(),                  // Graded score, optional
-                            submitted_at: j["submitted_at"].as_str().map(|s| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)), // Submission timestamp, optional
-                            student: student.info.clone(),
-                        });
-                    }
+            if let Some(user_id) = j["user_id"].as_u64() {
+                if student.info.id == user_id {
+                    // Extrair os file_ids da submissão, se houver anexos
+                    let file_ids = if let Some(attachments) = j["attachments"].as_array() {
+                        attachments
+                            .iter()
+                            .filter_map(|attachment| attachment["id"].as_u64()) // Extrair o file_id
+                            .collect()
+                    } else {
+                        Vec::new() // Se não houver arquivos, retorna um vetor vazio
+                    };
+
+                    return Some(Submission {
+                        id: j["id"].as_u64().unwrap(),                              // Submission's unique identifier
+                        assignment_id: j["assignment_id"].as_u64().unwrap(),         // Assignment's unique identifier
+                        score: j["score"].as_f64(),                                  // Graded score, optional
+                        submitted_at: j["submitted_at"].as_str().map(|s| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)), // Submission timestamp, optional
+                        student: student.info.clone(),
+                        file_ids,                                                    // Inclui os file_ids extraídos
+                    });
                 }
-                None => {}
             }
         }
         None
     }
 }
+

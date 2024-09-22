@@ -1,6 +1,6 @@
 use std::error::Error;
 // Import necessary crates and modules
-use crate::{Course, StudentInfo};
+use crate::{Course, StudentInfo, canvas};
 use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,8 @@ pub struct Submission {
     pub score: Option<f64>,                  // Graded score, optional
     pub submitted_at: Option<DateTime<Utc>>, // Submission timestamp, optional
     #[serde(skip)] // Skipped during serialization/deserialization
-    pub student: Arc<StudentInfo>, // Shared reference to student information
+    pub student: Arc<StudentInfo>,          // Shared reference to student information
+    pub file_ids: Vec<u64>,                 // List of file IDs associated with the submission
 }
 
 impl Submission {
@@ -110,5 +111,47 @@ impl Submission {
         let ret = course.update_assignment_score(client, self.assignment_id, self.student.id, new_score);
         self.score = new_score;
         ret
+    }
+
+    /// Downloads all files associated with this submission.
+    ///
+    /// This method iterates over the `file_ids` associated with the submission and
+    /// downloads each file to the specified output path. It uses the `download_submission_file`
+    /// function for each file.
+    ///
+    /// Arguments:
+    /// - `client`: HTTP client for executing requests.
+    /// - `output_path`: Path where the files will be saved. Each file will be saved with its original name.
+    ///
+    /// Returns:
+    /// - `Result<(), Box<dyn Error>>`: Success or an error detailing any issues encountered.
+    ///
+    /// Example:
+    /// ```
+    /// let client = reqwest::blocking::Client::new();
+    /// submission.download_submission_files(&client, "output/directory")?;
+    /// ```
+    pub fn download_submission_files(
+        &self,
+        client: &Client,
+        output_dir: &str,
+    ) -> Result<(), Box<dyn Error>> {
+        // Create the output directory if it doesn't exist
+        std::fs::create_dir_all(output_dir)?;
+
+        // Iterate over file IDs and download each file
+        for &file_id in &self.file_ids {
+
+            // Download the file and save it
+            canvas::download_submission_file(
+                client,
+                &self.student.course_info.canvas_info,  // Pass the Canvas credentials
+                file_id,
+                &output_dir, // Path where the file will be saved
+            )?;
+        }
+
+        println!("All files downloaded for submission {}", self.id);
+        Ok(())
     }
 }

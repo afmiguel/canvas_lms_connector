@@ -9,10 +9,6 @@ use crate::CanvasCredentials;
 // with complex initializations at runtime by default.
 use lazy_static::lazy_static;
 
-// Standard library imports for threading and time handling.
-use std::thread;
-use std::time::Duration;
-
 // Import of `Semaphore` from the `std_semaphore` crate.
 // A semaphore is a synchronization primitive that can be used to control access
 // to a common resource by multiple threads.
@@ -123,31 +119,41 @@ fn send_http_request_single_attempt(
 ///
 /// Note: This retry mechanism is a common pattern in network programming, especially
 /// when interacting with external APIs that may have rate limits or occasional downtime.
+use std::io;
+
 pub fn send_http_request(
     client: &reqwest::blocking::Client,
     method: HttpMethod,
     url: &str,
     canvas_info: &CanvasCredentials,
     params: Vec<(String, String)>,
-) -> HttpRequestResult {
+) -> Result<reqwest::blocking::Response, Box<dyn std::error::Error>> {
     let mut attempts = 0;
     let max_attempts = 5;
 
     // Retry loop.
-    // The function `send_http_request_single_attempt` is called repeatedly until a successful
-    // response is received or the maximum number of attempts is reached.
     while attempts < max_attempts {
-        match send_http_request_single_attempt(client, method.clone(), url, canvas_info, params.clone())
-        {
+        match send_http_request_single_attempt(client, method.clone(), url, canvas_info, params.clone()) {
             Ok(response) => return Ok(response),
             Err(status) if status == 403 && attempts < max_attempts - 1 => {
-                // Handling 403 errors with a retry after a delay.
-                // This case is specifically for handling rate limiting or similar temporary issues.
+                // Retry for 403 status codes.
                 attempts += 1;
-                thread::sleep(Duration::from_millis(1000)); // Delay before retrying.
+                std::thread::sleep(std::time::Duration::from_millis(1000)); // Wait before retrying.
             }
-            Err(status) => return Err(status),
+            Err(status) => {
+                // Convert the status code to a proper error type.
+                return Err(Box::new(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("HTTP request failed with status code: {}", status),
+                )));
+            }
         }
     }
-    Err(403) // Returns 403 if all attempts fail, indicating persistent authorization or access issues.
+
+    // Return an error after all attempts fail.
+    Err(Box::new(io::Error::new(
+        io::ErrorKind::PermissionDenied,
+        "All retry attempts failed with status 403",
+    )))
 }
+
