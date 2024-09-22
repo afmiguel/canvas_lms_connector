@@ -8,13 +8,13 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 use reqwest::blocking::multipart::{Form, Part};
 use reqwest::blocking::Client;
+use serde_json::json;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
+use std::path::Path;
 use std::sync::Arc;
 use std::thread::sleep;
-use serde_json::json;
-use std::path::Path;
 use urlencoding::decode;
 
 /// Enum to represent the result of fetching multiple courses.
@@ -746,72 +746,6 @@ where
 {
     let mut submissions = Vec::new();
 
-    // for &assignment_id in assignment_ids {
-    //     let url = format!(
-    //         "{}/courses/{}/assignments/{}/submissions/{}",
-    //         canvas_info.url_canvas, course_id, assignment_id, user_id
-    //     );
-    //
-    //     // Não são necessários parâmetros adicionais para esta chamada de API específica
-    //     let params = Vec::new(); // Sem parâmetros adicionais para a requisição GET
-    //
-    //     interaction();
-    //
-    //     // Try to send the HTTP request SYNC_ATTEMPT times
-    //     for attempt in 0..SYNC_ATTEMPT {
-    //         let response = send_http_request(
-    //             client,
-    //             HttpMethod::Get, // Método GET
-    //             &url,            // URL da API
-    //             &canvas_info,    // Token de acesso
-    //             params.clone(),  // Parâmetros da requisição
-    //         );
-    //
-    //         match response {
-    //             Ok(response) => {
-    //                 if response.status().is_success() {
-    //                     let mut submission: Submission = response.json()?; // Deserializar a resposta JSON para um objeto Submission
-    //
-    //                     // Extrair os IDs dos arquivos anexados à submissão (se houver)
-    //                     let file_ids = if let Some(attachments) = response.json::<Value>()?["attachments"].as_array() {
-    //                         attachments
-    //                             .iter()
-    //                             .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
-    //                             .collect()
-    //                     } else {
-    //                         Vec::new() // Caso não haja arquivos, retorna um vetor vazio
-    //                     };
-    //
-    //                     // Atribuir os file_ids extraídos à submissão
-    //                     submission.file_ids = file_ids;
-    //
-    //                     submissions.push(submission);
-    //                 } else {
-    //                     let error_message = response.text()?;
-    //                     return Err(Box::new(std::io::Error::new(
-    //                         std::io::ErrorKind::Other,
-    //                         format!(
-    //                             "Failed to fetch submissions with error: {} (a)",
-    //                             error_message
-    //                         ),
-    //                     )));
-    //                 }
-    //                 break;
-    //             }
-    //             Err(e) => {
-    //                 if attempt == SYNC_ATTEMPT - 1 {
-    //                     return Err(Box::new(std::io::Error::new(
-    //                         std::io::ErrorKind::Other,
-    //                         format!("Failed to fetch submissions with error: {} (b)", e),
-    //                     )));
-    //                 } else {
-    //                     sleep(Duration::from_millis(100));
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     for &assignment_id in assignment_ids {
         let url = format!(
             "{}/courses/{}/assignments/{}/submissions/{}",
@@ -823,13 +757,8 @@ where
         interaction();
 
         for attempt in 0..SYNC_ATTEMPT {
-            let response = send_http_request(
-                client,
-                HttpMethod::Get,
-                &url,
-                canvas_info,
-                params.clone(),
-            );
+            let response =
+                send_http_request(client, HttpMethod::Get, &url, canvas_info, params.clone());
 
             match response {
                 Ok(response) => {
@@ -838,17 +767,19 @@ where
                         let response_json: Value = response.json()?; // Armazenando o JSON da resposta
 
                         // Deserializar a submissão do JSON
-                        let mut submission: Submission = serde_json::from_value(response_json.clone())?; // Usando clone para reutilizar o JSON
+                        let mut submission: Submission =
+                            serde_json::from_value(response_json.clone())?; // Usando clone para reutilizar o JSON
 
                         // Extrair os file_ids dos anexos (se houver)
-                        let file_ids = if let Some(attachments) = response_json["attachments"].as_array() {
-                            attachments
-                                .iter()
-                                .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
-                                .collect()
-                        } else {
-                            Vec::new() // Caso não haja arquivos, retorna um vetor vazio
-                        };
+                        let file_ids =
+                            if let Some(attachments) = response_json["attachments"].as_array() {
+                                attachments
+                                    .iter()
+                                    .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
+                                    .collect()
+                            } else {
+                                Vec::new() // Caso não haja arquivos, retorna um vetor vazio
+                            };
 
                         // Atribuir os file_ids extraídos à submissão
                         submission.file_ids = file_ids;
@@ -858,7 +789,10 @@ where
                         let error_message = response.text()?;
                         return Err(Box::new(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            format!("Failed to fetch submissions with error: {} (a)", error_message),
+                            format!(
+                                "Failed to fetch submissions with error: {} (a)",
+                                error_message
+                            ),
                         )));
                     }
                     break;
@@ -879,7 +813,6 @@ where
 
     Ok(submissions)
 }
-
 
 pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
     let url = format!(
@@ -967,28 +900,29 @@ pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
     Ok(all_students)
 }
 
-pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Error>> {
-    /// Converts a JSON object into an `Assignment` structure.
-    ///
-    /// Transforms a JSON representation of an assignment into an `Assignment` object. Retrieves key
-    /// details such as ID, name, and description, linking them with the course information.
-    pub fn convert_json_to_assignment(
-        course_info: &Arc<CourseInfo>,
-        assignment: &serde_json::Value,
-    ) -> Option<Assignment> {
-        let id = assignment["id"].as_u64()?;
-        let name = assignment["name"].as_str().map(String::from)?;
-        let description = assignment["description"].as_str().map(String::from);
-        Some(Assignment {
-            info: Arc::new(AssignmentInfo {
-                id,
-                name,
-                description,
-                course_info: Arc::clone(course_info),
-            }),
-        })
-    }
+pub fn convert_json_to_assignment(
+    course_info: &Arc<CourseInfo>,
+    assignment: &serde_json::Value,
+) -> Option<Assignment> {
+    let id = assignment["id"].as_u64()?;
+    let name = assignment["name"].as_str().map(String::from)?;
+    let description = assignment["description"].as_str().map(String::from);
 
+    // Verifica se existe uma rubrica associada e extrai o ID, se disponível
+    let rubric_id = assignment["rubric_settings"]["id"].as_u64();
+
+    Some(Assignment {
+        info: Arc::new(AssignmentInfo {
+            id,
+            name,
+            description,
+            rubric_id,                            // Armazena o ID da rubrica
+            course_info: Arc::clone(course_info), // Mantém a referência ao CourseInfo
+        }),
+    })
+}
+
+pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Error>> {
     let url = format!(
         "{}/courses/{}/assignments",
         course.info.canvas_info.url_canvas, course.info.id
@@ -998,10 +932,8 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
     let mut page = 1;
     let client = &reqwest::blocking::Client::new();
     loop {
-        // Construindo os parâmetros da requisição
         let params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
 
-        // Convertendo (&str, String) para (String, String)
         let converted_params: Vec<(String, String)> = params
             .into_iter()
             .map(|(key, value)| (key.to_string(), value))
@@ -1012,18 +944,18 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
             HttpMethod::Get,
             &url,
             &course.info.canvas_info,
-            converted_params, // Passando o Vec<(String, String)> diretamente
+            converted_params,
         ) {
             Ok(response) => {
                 if response.status().is_success() {
                     let assignments_page: Vec<serde_json::Value> = response.json()?;
                     if assignments_page.is_empty() {
-                        break; // Sai do loop se não há mais cursos
+                        break;
                     }
                     all_assignments.extend(assignments_page.into_iter().filter_map(|assignment| {
                         convert_json_to_assignment(&course.info, &assignment)
                     }));
-                    page += 1; // Incrementa o número da página para a próxima iteração
+                    page += 1;
                 } else {
                     return Err(Box::new(std::io::Error::new(
                         std::io::ErrorKind::Other,
@@ -1042,6 +974,14 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
             }
         }
     }
+    // // Passa por todas os assignments e verifica se existe rubrica
+    // for assignment in &all_assignments {
+    //     if let Some(rubric_id) = assignment.info.rubric_id {
+    //         if let Ok(r) = download_rubric(client, &course.info.canvas_info, course.info.id, rubric_id){
+    //             println!("Rubric da atividade {}: {}",assignment.info.name , r);
+    //         }
+    //     }
+    // }
     Ok(all_assignments)
 }
 
@@ -1138,7 +1078,11 @@ pub fn comment_with_binary_file(
                 Err(e) => {
                     attempts += 1;
                     if attempts >= max_attempts {
-                        return Err(format!("Error in upload_binary_file after {} attempts: {}", attempts, e).into());
+                        return Err(format!(
+                            "Error in upload_binary_file after {} attempts: {}",
+                            attempts, e
+                        )
+                        .into());
                     }
                     sleep(std::time::Duration::from_secs(1)); // Espera 1 segundo antes de tentar novamente
                 }
@@ -1157,11 +1101,10 @@ pub fn comment_with_binary_file(
         comment_text,
         file_ids,
     )
-        .map_err(|e| format!("Error in add_comment: {}", e))?;
+    .map_err(|e| format!("Error in add_comment: {}", e))?;
 
     Ok(())
 }
-
 
 fn upload_binary_file(
     client: &Client,
@@ -1244,7 +1187,10 @@ pub fn create_assignment(
     course_id: u64,
     assignment_name: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/courses/{}/assignments", canvas_info.url_canvas, course_id);
+    let url = format!(
+        "{}/courses/{}/assignments",
+        canvas_info.url_canvas, course_id
+    );
 
     let body = json!({
         "assignment": {
@@ -1264,10 +1210,7 @@ pub fn create_assignment(
             } else {
                 Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!(
-                        "Falha ao criar atividade com status: {}",
-                        response.status()
-                    ),
+                    format!("Falha ao criar atividade com status: {}", response.status()),
                 )))
             }
         }
@@ -1285,7 +1228,10 @@ pub fn create_announcement(
     title: &str,
     message: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let url = format!("{}/courses/{}/discussion_topics", canvas_info.url_canvas, course_id);
+    let url = format!(
+        "{}/courses/{}/discussion_topics",
+        canvas_info.url_canvas, course_id
+    );
 
     let body = json!({
         "title": title,
@@ -1293,20 +1239,17 @@ pub fn create_announcement(
         "is_announcement": true
     });
 
-    match send_http_request(
-        client,
-        HttpMethod::Post(body),
-        &url,
-        canvas_info,
-        vec![],
-    ) {
+    match send_http_request(client, HttpMethod::Post(body), &url, canvas_info, vec![]) {
         Ok(response) => {
             if response.status().is_success() {
                 Ok(())
             } else {
                 Err(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
-                    format!("Failed to create announcement with status: {}", response.status()),
+                    format!(
+                        "Failed to create announcement with status: {}",
+                        response.status()
+                    ),
                 )))
             }
         }
@@ -1341,10 +1284,7 @@ pub fn download_submission_file(
     output_directory: &str, // Directory where the file will be saved
 ) -> Result<String, Box<dyn std::error::Error>> {
     // Constructing the URL to get the file metadata
-    let metadata_url = format!(
-        "{}/files/{}",
-        canvas_info.url_canvas, file_id
-    );
+    let metadata_url = format!("{}/files/{}", canvas_info.url_canvas, file_id);
 
     // First, make the request to get the file metadata
     let response = send_http_request(
@@ -1360,7 +1300,9 @@ pub fn download_submission_file(
         let metadata: Value = response.json()?;
 
         // Extracting the original file name and the download URL
-        if let (Some(file_name_encoded), Some(download_url)) = (metadata["filename"].as_str(), metadata["url"].as_str()) {
+        if let (Some(file_name_encoded), Some(download_url)) =
+            (metadata["filename"].as_str(), metadata["url"].as_str())
+        {
             // Decode the file name (removes encoded characters)
             let file_name_decoded = decode(file_name_encoded)?.into_owned();
             let file_name = file_name_decoded.replace("+", " "); // Replaces '+' with spaces
@@ -1397,7 +1339,49 @@ pub fn download_submission_file(
     } else {
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("Failed to retrieve file metadata. Status: {}", response.status()),
+            format!(
+                "Failed to retrieve file metadata. Status: {}",
+                response.status()
+            ),
         )))
+    }
+}
+
+pub fn download_rubric(
+    client: &Client,
+    canvas_info: &CanvasCredentials,
+    course_id: u64,
+    rubric_id: u64,
+) -> Result<Value, Box<dyn Error>> {
+    // URL para obter os detalhes da rubrica
+    let url = format!(
+        "{}/courses/{}/rubrics/{}",
+        canvas_info.url_canvas, course_id, rubric_id
+    );
+
+    // Parâmetros adicionais, se necessário (neste caso, nenhum parâmetro extra)
+    let params = Vec::new();
+
+    // Realiza a requisição HTTP
+    match send_http_request(client, HttpMethod::Get, &url, canvas_info, params) {
+        Ok(response) => {
+            if response.status().is_success() {
+                // Parseia o JSON retornado pela resposta
+                let rubric_details: Value = response.json()?;
+                Ok(rubric_details) // Retorna o JSON com os detalhes da rubrica
+            } else {
+                Err(Box::new(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "Failed to download rubric with status: {}",
+                        response.status()
+                    ),
+                )))
+            }
+        }
+        Err(e) => Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to download rubric with error: {}", e),
+        ))),
     }
 }

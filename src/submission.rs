@@ -6,6 +6,27 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum SubmissionType {
+    OnlineUpload,
+    OnlineTextEntry,
+    OnlineUrl,
+    MediaRecording,
+    None,
+    #[serde(other)] // Tratamento para tipos desconhecidos
+    Other,
+}
+
+
+
+impl Default for SubmissionType {
+    fn default() -> Self {
+        SubmissionType::None
+    }
+}
+
 /// Structure representing a student's submission for an assignment in the Canvas Learning Management System.
 ///
 /// This struct provides a detailed view of a student's submission, capturing key aspects like the submission's ID,
@@ -25,16 +46,20 @@ use std::sync::Arc;
 ///
 /// Examples of related functions include `fetch_submissions_for_assignments` and `fetch_assignments_and_latest_submissions`,
 /// which likely utilize this struct to represent and handle student submissions.
+/// Enum representing the type of submission.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Submission {
-    pub id: u64,                             // Submission's unique identifier
-    pub assignment_id: u64,                  // Assignment's unique identifier
-    pub score: Option<f64>,                  // Graded score, optional
-    pub submitted_at: Option<DateTime<Utc>>, // Submission timestamp, optional
-    #[serde(skip)] // Skipped during serialization/deserialization
-    pub student: Arc<StudentInfo>,          // Shared reference to student information
-    pub file_ids: Vec<u64>,                 // List of file IDs associated with the submission
+    pub id: u64,                               // Submission's unique identifier
+    pub assignment_id: u64,                    // Assignment's unique identifier
+    pub score: Option<f64>,                    // Graded score, optional
+    pub submitted_at: Option<DateTime<Utc>>,   // Submission timestamp, optional
+    pub submission_type: Option<SubmissionType>,  // Tipo de submissão, agora tratado como Option
+    #[serde(skip)]
+    pub student: Arc<StudentInfo>,
+    #[serde(skip)]
+    pub file_ids: Vec<u64>,                    // IDs dos arquivos associados
 }
+
 
 impl Submission {
     /// Adds a file comment to a student's assignment submission.
