@@ -135,23 +135,30 @@ impl Submission {
         &self,
         client: &Client,
         output_dir: &str,
-    ) -> Result<(), Box<dyn Error>> {
-        // Create the output directory if it doesn't exist
+    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        // Cria o diretório de saída, se não existir
         std::fs::create_dir_all(output_dir)?;
 
-        // Iterate over file IDs and download each file
-        for &file_id in &self.file_ids {
+        // Vetor para armazenar os caminhos completos dos arquivos baixados
+        let mut downloaded_files = Vec::new();
 
-            // Download the file and save it
-            canvas::download_submission_file(
+        // Itera sobre os IDs dos arquivos e faz o download de cada um
+        for &file_id in &self.file_ids {
+            // Faz o download do arquivo e obtém o caminho completo onde foi salvo
+            let file_path = canvas::download_submission_file(
                 client,
-                &self.student.course_info.canvas_info,  // Pass the Canvas credentials
+                &self.student.course_info.canvas_info,  // Passa as credenciais do Canvas
                 file_id,
-                &output_dir, // Path where the file will be saved
+                output_dir, // Caminho onde o arquivo será salvo
             )?;
+
+            // Adiciona o caminho completo do arquivo baixado à lista
+            downloaded_files.push(file_path);
         }
 
-        println!("All files downloaded for submission {}", self.id);
-        Ok(())
+//        println!("All files downloaded for submission {}", self.id);
+
+        // Retorna a lista de caminhos completos dos arquivos baixados
+        Ok(downloaded_files)
     }
 }
