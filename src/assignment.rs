@@ -109,7 +109,7 @@ impl Assignment {
                             "none" => SubmissionType::None,
                             _ => SubmissionType::Other,
                         }),
-                        student: student.info.clone(),
+                        student_info: student.info.clone(),
                         file_ids,
                         assignment_info,
                     });

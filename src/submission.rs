@@ -65,7 +65,7 @@ pub struct Submission {
     pub submitted_at: Option<DateTime<Utc>>,     // Submission timestamp, optional
     pub submission_type: Option<SubmissionType>, // Tipo de submissão, agora tratado como Option
     #[serde(skip)]
-    pub student: Arc<StudentInfo>,
+    pub student_info: Arc<StudentInfo>,
     #[serde(skip)]
     pub assignment_info: Arc<AssignmentInfo>,
     #[serde(skip)]
@@ -154,12 +154,12 @@ impl Submission {
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
         let course = Course {
-            info: self.student.course_info.clone(),
+            info: self.student_info.course_info.clone(),
         };
         course.comment_with_file(
             client,
             self.assignment_id,
-            self.student.id,
+            self.student_info.id,
             file_path,
             comment_text,
         )
@@ -193,11 +193,11 @@ impl Submission {
         new_score: Option<f64>,
     ) -> Result<(), Box<dyn Error>> {
         let course = Course {
-            info: self.student.course_info.clone(),
+            info: self.student_info.course_info.clone(),
         };
 
         let ret =
-            course.update_assignment_score(client, self.assignment_id, self.student.id, new_score);
+            course.update_assignment_score(client, self.assignment_id, self.student_info.id, new_score);
         self.score = new_score;
         ret
     }
@@ -236,7 +236,7 @@ impl Submission {
             // Faz o download do arquivo e obtém o caminho completo onde foi salvo
             let file_path = canvas::download_submission_file(
                 client,
-                &self.student.course_info.canvas_info, // Passa as credenciais do Canvas
+                &self.student_info.course_info.canvas_info, // Passa as credenciais do Canvas
                 file_id,
                 output_dir, // Caminho onde o arquivo será salvo
             )?;
