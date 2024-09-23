@@ -67,7 +67,7 @@ pub use credentials::CanvasCredentials;
 pub use course::{Course, CourseInfo};
 pub use student::{Student, StudentInfo};
 pub use assignment::{Assignment, AssignmentInfo};
-pub use submission::{Submission};
+pub use submission::{Submission, SubmissionType};
 pub use canvas::{Canvas, CanvasResultCourses, CanvasResultSingleCourse};
 
 #[cfg(test)]
