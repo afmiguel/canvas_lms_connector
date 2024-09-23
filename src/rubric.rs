@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-// use crate::AssignmentInfo;
-// use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Rubric {
@@ -9,22 +7,23 @@ pub struct Rubric {
     pub data: Vec<Criterion>,
     pub points_possible: f64,
     pub id: u64,
-    pub title: String,
-    // #[serde(skip)] // Skipped during serialization/deserialization
-    // pub assigment_info: Arc<AssignmentInfo>,          // Shared reference to student information
+    pub title: String,  // This should match the JSON field "title"
+    pub free_form_criterion_comments: Option<bool>,  // Optional field based on your JSON
+    pub hide_score_total: Option<bool>,              // Optional field
+    pub public: Option<bool>,                        // Optional field
+    pub rating_order: Option<String>,                // Optional field
+    pub read_only: Option<bool>,                     // Optional field
+    pub reusable: Option<bool>,                      // Optional field
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Criterion {
-    pub criterion_use_range: Option<String>,
+    pub criterion_use_range: Option<bool>,
     pub description: String,
     pub id: String,
-    pub ignore_for_scoring: Option<bool>,
     pub long_description: Option<String>,
-    pub mastery_points: Option<f64>,
     pub points: f64,
     pub ratings: Vec<Rating>,
-    pub title: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

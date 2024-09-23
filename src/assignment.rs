@@ -1,15 +1,11 @@
 // Import necessary crates and modules
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
-// use std::thread::sleep;
 use crate::rubric::Rubric;
 use crate::submission::{Submission, SubmissionType};
 use crate::{canvas, CourseInfo, Student};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-// use crate::student::Student;
-// use crate::canvas::Canvas;
-// use crate::connection::{HttpMethod, send_http_request};
 
 /// Structure to hold detailed information about an assignment in the Canvas system.
 ///
@@ -70,7 +66,7 @@ impl Assignment {
             Ok(submissions_value) => {
                 let submissions = submissions_value
                     .iter()
-                    .filter_map(|j| Assignment::convert_json_to_submission(students, j))
+                    .filter_map(|j| Assignment::convert_json_to_submission(students, j, self.info.clone()))
                     .collect::<Vec<_>>();
 
                 Ok(submissions)
@@ -83,7 +79,9 @@ impl Assignment {
     }
 
     /// Função que converte o JSON de submissões em uma estrutura `Submission`.
-    fn convert_json_to_submission(students: &Vec<Student>, j: &Value) -> Option<Submission> {
+    fn convert_json_to_submission(students: &Vec<Student>,
+                                  j: &Value,
+                                  assignment_info: Arc<AssignmentInfo>,) -> Option<Submission> {
         for student in students {
             if let Some(user_id) = j["user_id"].as_u64() {
                 if student.info.id == user_id {
@@ -109,10 +107,11 @@ impl Assignment {
                             "online_url" => SubmissionType::OnlineUrl,
                             "media_recording" => SubmissionType::MediaRecording,
                             "none" => SubmissionType::None,
-                            _ => SubmissionType::Other, // Corrigido para a variante unitária
+                            _ => SubmissionType::Other,
                         }),
                         student: student.info.clone(),
                         file_ids,
+                        assignment_info,
                     });
                 }
             }
@@ -131,6 +130,10 @@ impl Assignment {
                 rubric_id,
             ) {
                 Ok(rubric_value) => {
+                    // // Imprime o valor da rubrica
+                    // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+                    // println!("Rubrica: {:?}", rubric_value);
+                    // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
                     // Adiciona `assignment_info` ao deserializar o JSON para o struct Rubric
                     let rubric_result: Result<Rubric, _> = serde_json::from_value(rubric_value);
 

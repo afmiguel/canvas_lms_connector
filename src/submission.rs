@@ -1,7 +1,7 @@
 use std::error::Error;
 // Import necessary crates and modules
-use crate::{canvas, Course, StudentInfo};
-use chrono::{DateTime, Utc};
+use crate::{canvas, AssignmentInfo, Course, StudentInfo};
+use chrono::{DateTime, Duration, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -67,10 +67,64 @@ pub struct Submission {
     #[serde(skip)]
     pub student: Arc<StudentInfo>,
     #[serde(skip)]
+    pub assignment_info: Arc<AssignmentInfo>,
+    #[serde(skip)]
     pub file_ids: Vec<u64>, // IDs dos arquivos associados
 }
 
 impl Submission {
+    /// Checks if the submission is late by comparing `submitted_at` with `due_at`.
+    ///
+    /// Returns:
+    /// - `Some(Duration)` if the submission is late, indicating the time difference between `submitted_at` and `due_at`.
+    /// - `None` if the submission is not late or if there is no submission or due date.
+    pub fn is_late(&self) -> Option<Duration> {
+        // Check if both submission and due dates are available
+        if let (Some(submitted_at), Some(due_at)) = (self.submitted_at, self.assignment_info.due_at)
+        {
+            // Compare the dates
+            if submitted_at > due_at {
+                // Calculate the time difference between submission and due date
+                Some(submitted_at.signed_duration_since(due_at))
+            } else {
+                None // Submission is not late
+            }
+        } else {
+            None // Missing information to determine lateness
+        }
+    }
+
+    /// Formats the late submission duration as a human-readable string.
+    ///
+    /// Calls the `is_late` function to check if the submission is late, and if so,
+    /// formats the resulting `Duration` into a string in the form of "Xh Ym Zs".
+    ///
+    /// Returns:
+    /// - `Some(String)` if the submission is late, indicating how late the submission was.
+    /// - `None` if the submission is not late or if there is no submission or due date.
+    pub fn is_late_str(&self) -> Option<String> {
+        // Call the is_late function to get the late Duration
+        if let Some(late_duration) = self.is_late() {
+            let secs = late_duration.num_seconds().abs();
+            let hours = secs / 3600;
+            let minutes = (secs % 3600) / 60;
+            let seconds = secs % 60;
+
+            // Format the duration in a human-readable way
+            let formatted_duration = if hours > 0 {
+                format!("{}h {:02}m {:02}s", hours, minutes, seconds)
+            } else if minutes > 0 {
+                format!("{}m {:02}s", minutes, seconds)
+            } else {
+                format!("{}s", seconds)
+            };
+
+            Some(formatted_duration)
+        } else {
+            None // Not late or missing information
+        }
+    }
+
     /// Adds a file comment to a student's assignment submission.
     ///
     /// This function first uploads a file to the Canvas LMS and then attaches it as a comment
