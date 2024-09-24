@@ -60,7 +60,7 @@ mod student; // Deals with operations related to students in Canvas courses.
 mod assignment; // Manages assignments within Canvas courses.
 mod submission; // Handles submissions for assignments in Canvas.
 pub mod canvas;
-mod rubric;
+pub mod rubric;
 
 // Exports key structures for external use.
 pub use credentials::CanvasCredentials;
