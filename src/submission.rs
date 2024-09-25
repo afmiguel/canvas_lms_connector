@@ -248,6 +248,10 @@ impl Submission {
         //        println!("All files downloaded for submission {}", self.id);
 
         // Retorna a lista de caminhos completos dos arquivos baixados
-        Ok(Some(downloaded_files))
+        if downloaded_files.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(downloaded_files))
+        }
     }
 }
