@@ -224,7 +224,7 @@ impl Submission {
         &self,
         client: &Client,
         output_dir: &str,
-    ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
         // Cria o diretório de saída, se não existir
         std::fs::create_dir_all(output_dir)?;
 
@@ -248,6 +248,6 @@ impl Submission {
         //        println!("All files downloaded for submission {}", self.id);
 
         // Retorna a lista de caminhos completos dos arquivos baixados
-        Ok(downloaded_files)
+        Ok(Some(downloaded_files))
     }
 }
