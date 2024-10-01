@@ -1,7 +1,7 @@
 // Import necessary crates and modules
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
-use crate::rubric::Rubric;
+use crate::rubric_downloaded::RubricDownloaded;
 use crate::submission::{Submission, SubmissionType};
 use crate::{canvas, CourseInfo, Student};
 use serde::{Deserialize, Serialize};
@@ -119,7 +119,7 @@ impl Assignment {
         None
     }
 
-    pub fn download_rubric(&self) -> Option<Rubric> {
+    pub fn download_rubric(&self) -> Option<RubricDownloaded> {
         let client = &reqwest::blocking::Client::new();
 
         if let Some(rubric_id) = self.info.rubric_id {
@@ -130,12 +130,12 @@ impl Assignment {
                 rubric_id,
             ) {
                 Ok(rubric_value) => {
-                    // // Imprime o valor da rubrica
+                    // Imprime o valor da rubrica
                     // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
                     // println!("Rubrica: {:?}", rubric_value);
                     // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
                     // Adiciona `assignment_info` ao deserializar o JSON para o struct Rubric
-                    let rubric_result: Result<Rubric, _> = serde_json::from_value(rubric_value);
+                    let rubric_result: Result<RubricDownloaded, _> = serde_json::from_value(rubric_value);
 
                     match rubric_result {
                         Ok(rubric) => {

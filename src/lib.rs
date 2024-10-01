@@ -60,7 +60,8 @@ mod student; // Deals with operations related to students in Canvas courses.
 mod assignment; // Manages assignments within Canvas courses.
 mod submission; // Handles submissions for assignments in Canvas.
 pub mod canvas;
-pub mod rubric;
+pub mod rubric_downloaded;
+pub mod rubric_submission;
 
 // Exports key structures for external use.
 pub use credentials::CanvasCredentials;
@@ -70,14 +71,83 @@ pub use assignment::{Assignment, AssignmentInfo};
 pub use submission::{Submission, SubmissionType};
 pub use canvas::{Canvas, CanvasResultCourses, CanvasResultSingleCourse};
 
+// #[cfg(test)]
+// mod tests {
+//     // Test implementations for library functionalities.
+//     // Example:
+//     // #[test]
+//     // fn test_fetch_courses() {
+//     //     let credentials = CanvasCredentials::load_from_file("path/to/credentials");
+//     //     let result = Canvas::fetch_courses_with_credentials(&credentials);
+//     //     assert!(matches!(result, CanvasResultCourses::Ok(_)));
+//     // }
+// }
+
+
 #[cfg(test)]
 mod tests {
-    // Test implementations for library functionalities.
-    // Example:
-    // #[test]
-    // fn test_fetch_courses() {
-    //     let credentials = CanvasCredentials::load_from_file("path/to/credentials");
-    //     let result = Canvas::fetch_courses_with_credentials(&credentials);
-    //     assert!(matches!(result, CanvasResultCourses::Ok(_)));
-    // }
+    use reqwest::blocking::Client;
+    use crate::{CanvasCredentials};
+    use crate::canvas::create_rubric;
+    use std::collections::HashMap;
+    use crate::rubric_submission::{CanvasRubricSubmission, CriterionSubmission, RatingSubmission, RubricAssociationSubmission, RubricSubmissionDetails};
+
+    #[test]
+    fn test_create_rubric() {
+        // Defining the rubric for the test, based on the simplified structure
+        let rubric = CanvasRubricSubmission {
+            rubric: RubricSubmissionDetails {
+                title: "My New Rubric".to_string(),
+                criteria: {
+                    let mut criteria_map = HashMap::new();
+                    criteria_map.insert(
+                        "1".to_string(),
+                        CriterionSubmission {
+                            description: "Stakeholder Identification".to_string(),
+                            criterion_use_range: Some(false),
+                            ratings: {
+                                let mut ratings_map = HashMap::new();
+                                ratings_map.insert(
+                                    "1".to_string(),
+                                    RatingSubmission {
+                                        description: "All stakeholders identified".to_string(),
+                                        points: 5.0,
+                                    },
+                                );
+                                ratings_map.insert(
+                                    "2".to_string(),
+                                    RatingSubmission {
+                                        description: "Few stakeholders identified".to_string(),
+                                        points: 0.0,
+                                    },
+                                );
+                                ratings_map
+                            },
+                        },
+                    );
+                    criteria_map
+                },
+            },
+            rubric_association: RubricAssociationSubmission {
+                association_type: "Course".to_string(),
+                association_id: 43689,
+                use_for_grading: false,
+            },
+        };
+
+        // Define Canvas credentials for the test
+        let credentials = CanvasCredentials {
+            url_canvas: "https://pucpr.beta.instructure.com/api/v1".to_string(),
+            token_canvas: "20746~JhvKCm9LGeQ7zf4yKXn3YmPvtK6LFrayT2La9VNZ2vE8QHWHBWQJxcFHY6xKBYeh".to_string(),
+        };
+
+        // Initialize the HTTP client
+        let client = Client::new();
+
+        // Call the function that creates the rubric
+        match create_rubric(&client, &credentials, 43689, &rubric) {
+            Ok(_) => println!("Rubric created successfully!"),
+            Err(e) => panic!("Error creating rubric: {}", e),
+        }
+    }
 }

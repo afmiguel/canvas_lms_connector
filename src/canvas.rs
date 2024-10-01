@@ -1272,6 +1272,7 @@ use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
 use chrono::{DateTime, Utc};
+use crate::rubric_submission::CanvasRubricSubmission;
 
 /// Downloads a submission file from the Canvas LMS.
 ///
@@ -1392,5 +1393,69 @@ pub fn download_rubric(
             std::io::ErrorKind::Other,
             format!("Failed to download rubric with error: {}", e),
         ))),
+    }
+}
+
+/// Função para criar uma rubrica no Canvas LMS.
+pub fn create_rubric(
+    client: &Client,
+    canvas_info: &CanvasCredentials,
+    course_id: u64,
+    rubric: &CanvasRubricSubmission,  // Using CanvasRubricSubmission instead of Rubric
+) -> Result<(), Box<dyn Error>> {
+    // URL for the API to create the rubric
+    let url = format!("{}/courses/{}/rubrics", canvas_info.url_canvas, course_id);
+
+    // Serializing the CanvasRubricSubmission structure to JSON, with numerical string keys for criteria and ratings
+    let rubric_data = json!({
+        "rubric": {
+            "title": rubric.rubric.title,
+            "criteria": rubric.rubric.criteria.iter().map(|(key, criterion)| {
+                (
+                    key.clone(), // Dereferencing the key (from &String to String)
+                    json!({
+                        "description": criterion.description,
+                        "criterion_use_range": criterion.criterion_use_range,
+                        "ratings": criterion.ratings.iter().map(|(rating_key, rating)| {
+                            (
+                                rating_key.clone(), // Dereferencing the rating key (from &String to String)
+                                json!({
+                                    "description": rating.description,
+                                    "points": rating.points
+                                })
+                            )
+                        }).collect::<serde_json::Map<String, serde_json::Value>>() // Collecting into Map<String, Value>
+                    })
+                )
+            }).collect::<serde_json::Map<String, serde_json::Value>>() // Collecting into Map<String, Value>
+        },
+        "rubric_association": {
+            "association_type": rubric.rubric_association.association_type,
+            "association_id": rubric.rubric_association.association_id,
+            "use_for_grading": rubric.rubric_association.use_for_grading
+        }
+    });
+
+    // Sending the POST request using send_http_request
+    let response = send_http_request(
+        client,
+        HttpMethod::Post(rubric_data),  // Sending the JSON body with the POST request
+        &url,
+        canvas_info,
+        vec![],  // No additional parameters
+    )?;
+
+    // Checking if the response was successful
+    if response.status().is_success() {
+        // let resp_json: serde_json::Value = response.json()?;
+        // println!("Rubric created successfully: {:?}", resp_json);
+        Ok(())
+    } else {
+        // let error_text = response.text()?;
+        // println!("Failed to create rubric: {}", error_text);
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Error creating rubric",
+        )))
     }
 }

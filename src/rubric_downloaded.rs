@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Rubric {
+pub struct RubricDownloaded {
     pub context_id: u64,
     pub context_type: String,
     pub data: Vec<Criterion>,
