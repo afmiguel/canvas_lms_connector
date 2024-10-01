@@ -1,7 +1,7 @@
 // Necessary imports from standard and external crates.
-use crate::assignment::{Assignment};
-use crate::student::{Student};
-use crate::{canvas, CanvasCredentials};
+use crate::assignment::Assignment;
+use crate::student::Student;
+use crate::{canvas, Canvas, CanvasCredentials, CanvasResultSingleCourse};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Select;
 use regex::Regex;
@@ -46,6 +46,30 @@ pub struct Course {
     pub info: Arc<CourseInfo>,
 }
 
+impl CourseInfo {
+    /// Retrieves students enrolled in this course.
+    ///
+    /// Makes a Canvas API call to fetch a list of students enrolled in the course. Utilizes course ID
+    /// and API credentials from `CourseInfo` for authentication. Handles API pagination to ensure all
+    /// students are retrieved.
+    ///
+    /// Returns:
+    /// - `Result<Vec<Student>, Box<dyn std::error::Error>>`: Success with a list of students or an error
+    ///   detailing any issues encountered during the API call.
+    ///
+    /// Example:
+    /// ```
+    /// let course_info = CourseInfo { /* ... */ };
+    /// match course_info.fetch_students() {
+    ///     Ok(students) => /* handle students */,
+    ///     Err(e) => /* handle error */,
+    /// }
+    /// ```
+    pub fn fetch_students(&self) -> Result<Vec<Student>, Box<dyn Error>> {
+        canvas::fetch_students(self)
+    }
+}
+
 /// Implementation of methods for the `Course` struct, targeting course-specific functionalities in Canvas.
 ///
 /// These methods provide capabilities such as retrieving enrolled students, fetching assignments, and
@@ -71,7 +95,7 @@ impl Course {
     /// }
     /// ```
     pub fn fetch_students(&self) -> Result<Vec<Student>, Box<dyn Error>> {
-        canvas::fetch_students(self)
+        self.info.fetch_students()
     }
 
     /// Retrieves assignments for this course.
@@ -130,10 +154,7 @@ impl Course {
             // Add EXIT at the end of the list
             menu_str.push("EXIT".to_string());
 
-            let prompt: &str = match text {
-                Some(prompt) => prompt,
-                None => "Choose a assignment:",
-            };
+            let prompt: &str = text.unwrap_or_else(|| "Choose a assignment:");
 
             let selection = Select::with_theme(&ColorfulTheme::default())
                 .with_prompt(prompt)
@@ -238,7 +259,7 @@ impl Course {
         )
     }
 
-    pub fn comment_with_bynary_file(
+    pub fn comment_with_binary_file(
         &self,
         client: &Client,
         assignment_id: u64,
@@ -264,7 +285,12 @@ impl Course {
         client: &Client,
         assignment_name: &str,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::create_assignment(client, &self.info.canvas_info, self.info.id, assignment_name)
+        canvas::create_assignment(
+            client,
+            &self.info.canvas_info,
+            self.info.id,
+            assignment_name,
+        )
     }
 
     pub fn create_announcement(
@@ -272,8 +298,101 @@ impl Course {
         client: &Client,
         title: &str,
         message: &str,
-    ) -> Result<(), Box<dyn Error>>{
+    ) -> Result<(), Box<dyn Error>> {
         canvas::create_announcement(client, &self.info.canvas_info, self.info.id, title, message)
+    }
+
+    /// Loads the information of a specific course from the Canvas LMS based on the course ID.
+    ///
+    /// This function uses Canvas API credentials and makes a request to retrieve the details
+    /// of a course by the given ID. It returns a `Course` object containing all relevant course information,
+    /// or an error if the operation fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The unique identifier of the course in the Canvas LMS.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Course, Box<dyn Error>>`, where:
+    /// - `Ok(Course)` contains the successfully loaded course data.
+    /// - `Err(Box<dyn Error>)` contains an error message in case of connection failure or invalid credentials.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let course_id = 12345;
+    /// match new_course_from_course_id(course_id) {
+    ///     Ok(course) => println!("Course loaded successfully: {:?}", course),
+    ///     Err(e) => eprintln!("Error loading course: {}", e),
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This function returns errors in the following cases:
+    /// - Failed connection to Canvas LMS.
+    /// - Invalid credentials for the Canvas API.
+    ///
+    /// The function uses `Canvas::fetch_single_course_with_credentials` to make the API call
+    /// and handle authentication, transforming the received JSON data into a `Course` object.
+    pub fn get_course_from_course_id(id: u64) -> Result<Course, Box<dyn Error>> {
+        // Pegue as credenciais do Canvas
+        let credentials = CanvasCredentials::credentials();
+
+        // Busque o curso com o ID fornecido
+        match Canvas::fetch_single_course_with_credentials(&credentials, id) {
+            CanvasResultSingleCourse::Ok(course) => Ok(course),
+            CanvasResultSingleCourse::ErrConnection(msg) => {
+                eprintln!("Erro de conexão: {}", msg);
+                Err(format!("Erro de conexão: {}", msg).into())
+            }
+            CanvasResultSingleCourse::ErrCredentials(msg) => {
+                eprintln!("Erro de credenciais: {}", msg);
+                Err(format!("Erro de credenciais: {}", msg).into())
+            }
+        }
+    }
+
+    // Retrieves a specific assignment from the course based on the assignment ID.
+    ///
+    /// This method makes an API call to fetch the details of a particular assignment in the course
+    /// by the provided assignment ID. It returns the `Assignment` object containing the assignment's
+    /// details or an error if the assignment is not found or if the request fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `id`: The unique identifier of the assignment in the Canvas LMS.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Assignment, Box<dyn Error>>`, where:
+    /// - `Ok(Assignment)` contains the successfully loaded assignment data.
+    /// - `Err(Box<dyn Error>)` contains an error message in case the assignment is not found or any issue occurs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let course = Course { /* initialized */ };
+    /// let assignment_id = 12345;
+    /// match course.get_assignment_from_assignment_id(assignment_id) {
+    ///     Ok(assignment) => println!("Assignment loaded successfully: {:?}", assignment),
+    ///     Err(e) => eprintln!("Error loading assignment: {}", e),
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method returns errors if the assignment is not found or if there is a failure in the API request.
+    pub fn get_assignment_from_assignment_id(&self, id: u64) -> Result<Assignment, Box<dyn Error>> {
+        // Fetch all assignments for the course
+        let assignments = self.fetch_assignments()?;
+
+        // Try to find the assignment with the given ID
+        match assignments.into_iter().find(|assignment| assignment.info.id == id) {
+            Some(assignment) => Ok(assignment), // Assignment found
+            None => Err(format!("Assignment with id {} not found", id).into()), // Assignment not found
+        }
     }
 }
 

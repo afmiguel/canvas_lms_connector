@@ -814,10 +814,10 @@ where
     Ok(submissions)
 }
 
-pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
+pub fn fetch_students(course_info: &CourseInfo) -> Result<Vec<Student>, Box<dyn Error>> {
     let url = format!(
         "{}/courses/{}/users",
-        course.info.canvas_info.url_canvas, course.info.id
+        course_info.canvas_info.url_canvas, course_info.id
     );
 
     /// Converts a JSON object to a `Student` structure.
@@ -825,7 +825,7 @@ pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
     /// Parses a JSON representation of a student from the Canvas API into a `Student` object.
     /// Extracts student ID, name, and email and associates it with course information.
     pub fn convert_json_to_student(
-        course_info: &Arc<CourseInfo>,
+        course_info: CourseInfo,
         student: &serde_json::Value,
     ) -> Option<Student> {
         let id = student["id"].as_u64()?;
@@ -836,7 +836,7 @@ pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
                 id,
                 name,
                 email,
-                course_info: Arc::clone(course_info),
+                course_info: Arc::new(course_info),
             }),
         })
     }
@@ -864,7 +864,7 @@ pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
             client,
             HttpMethod::Get, // Supondo que HttpMethod::Get é um enum definido em algum lugar
             &url,
-            &course.info.canvas_info,
+            &course_info.canvas_info,
             converted_params, // Passando o Vec<(String, String)> diretamente
         ) {
             Ok(response) => {
@@ -876,7 +876,7 @@ pub fn fetch_students(course: &Course) -> Result<Vec<Student>, Box<dyn Error>> {
                     all_students.extend(
                         students_page
                             .into_iter()
-                            .filter_map(|student| convert_json_to_student(&course.info, &student)),
+                            .filter_map(|student| convert_json_to_student(course_info.clone(), &student)),
                     );
                     page += 1; // Incrementa o número da página para a próxima iteração
                 } else {

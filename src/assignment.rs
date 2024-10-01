@@ -1,11 +1,12 @@
 // Import necessary crates and modules
-use chrono::{DateTime, Utc};
-use std::sync::Arc;
 use crate::rubric_downloaded::RubricDownloaded;
 use crate::submission::{Submission, SubmissionType};
 use crate::{canvas, CourseInfo, Student};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::error::Error;
+use std::sync::Arc;
 
 /// Structure to hold detailed information about an assignment in the Canvas system.
 ///
@@ -31,7 +32,6 @@ pub struct AssignmentInfo {
     #[serde(skip)]
     pub course_info: Arc<CourseInfo>,
 }
-
 
 /// High-level structure representing an assignment within the Canvas Learning Management System.
 ///
@@ -66,7 +66,9 @@ impl Assignment {
             Ok(submissions_value) => {
                 let submissions = submissions_value
                     .iter()
-                    .filter_map(|j| Assignment::convert_json_to_submission(students, j, self.info.clone()))
+                    .filter_map(|j| {
+                        Assignment::convert_json_to_submission(students, j, self.info.clone())
+                    })
                     .collect::<Vec<_>>();
 
                 Ok(submissions)
@@ -79,9 +81,11 @@ impl Assignment {
     }
 
     /// Função que converte o JSON de submissões em uma estrutura `Submission`.
-    fn convert_json_to_submission(students: &Vec<Student>,
-                                  j: &Value,
-                                  assignment_info: Arc<AssignmentInfo>,) -> Option<Submission> {
+    fn convert_json_to_submission(
+        students: &Vec<Student>,
+        j: &Value,
+        assignment_info: Arc<AssignmentInfo>,
+    ) -> Option<Submission> {
         for student in students {
             if let Some(user_id) = j["user_id"].as_u64() {
                 if student.info.id == user_id {
@@ -135,7 +139,8 @@ impl Assignment {
                     // println!("Rubrica: {:?}", rubric_value);
                     // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
                     // Adiciona `assignment_info` ao deserializar o JSON para o struct Rubric
-                    let rubric_result: Result<RubricDownloaded, _> = serde_json::from_value(rubric_value);
+                    let rubric_result: Result<RubricDownloaded, _> =
+                        serde_json::from_value(rubric_value);
 
                     match rubric_result {
                         Ok(rubric) => {
@@ -159,4 +164,96 @@ impl Assignment {
             None // Rubric ID não encontrado
         }
     }
+
+    /// Retrieves a specific submission for this assignment based on the submission ID.
+    ///
+    /// This method makes an API call to fetch the details of a particular submission for this assignment
+    /// by the provided submission ID. It returns the `Submission` object containing the submission's
+    /// details or an error if the submission is not found or if the request fails.
+    ///
+    /// # Parameters
+    ///
+    /// - `submission_id`: The unique identifier of the submission in the Canvas LMS.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result<Submission, Box<dyn Error>>`, where:
+    /// - `Ok(Submission)` contains the successfully loaded submission data.
+    /// - `Err(Box<dyn Error>)` contains an error message in case the submission is not found or any issue occurs.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// let assignment = Assignment { /* initialized */ };
+    /// let submission_id = 12345;
+    /// match assignment.get_submission_from_submission_id(submission_id) {
+    ///     Ok(submission) => println!("Submission loaded successfully: {:?}", submission),
+    ///     Err(e) => eprintln!("Error loading submission: {}", e),
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// This method returns errors if the submission is not found or if there is a failure in the API request.
+    pub fn get_submission_from_submission_id(
+        &self,
+        submission_id: u64,
+        mut cache: Option<&mut GetSubmissionFromSubmissionIdCache>, // Declarado como mutável
+    ) -> Result<Submission, Box<dyn Error>> {
+        // Fetch all submissions for the assignment
+        let client = &reqwest::blocking::Client::new();
+
+        // Variáveis para submissões e estudantes
+        let submissions_value: Vec<Value>;
+        let students_value: Vec<Student>;
+
+        // Primeiro: lidar com o cache de submissões
+        if let Some(ref mut cache) = cache {
+            if let Some(submissions) = cache.submissions_value.as_ref() {
+                submissions_value = submissions.clone();  // Usa submissões do cache
+            } else {
+                submissions_value = canvas::get_all_submissions(
+                    client,
+                    self.info.course_info.canvas_info.as_ref(),
+                    self.info.course_info.id,
+                    self.info.id,
+                )?; // Faz requisição se não houver cache
+                cache.submissions_value = Some(submissions_value.clone()); // Atualiza o cache
+            }
+        } else {
+            submissions_value = canvas::get_all_submissions(
+                client,
+                self.info.course_info.canvas_info.as_ref(),
+                self.info.course_info.id,
+                self.info.id,
+            )?; // Faz requisição se o cache não for fornecido
+        }
+
+        // Segundo: lidar com o cache de estudantes
+        if let Some(ref mut cache) = cache {
+            if let Some(students) = cache.submission.as_ref() {
+                students_value = students.clone();  // Usa estudantes do cache
+            } else {
+                students_value = self.info.course_info.fetch_students()?; // Faz requisição se não houver cache
+                cache.submission = Some(students_value.clone()); // Atualiza o cache
+            }
+        } else {
+            students_value = self.info.course_info.fetch_students()?; // Faz requisição se o cache não for fornecido
+        }
+
+        // Tentar encontrar a submissão com o ID fornecido
+        match submissions_value
+            .iter()
+            .filter_map(|j| Assignment::convert_json_to_submission(&students_value, j, self.info.clone()))
+            .find(|submission| submission.id == submission_id)
+        {
+            Some(submission) => Ok(submission),
+            None => Err(format!("Submission with id {} not found", submission_id).into()),
+        }
+    }
+
+}
+pub struct GetSubmissionFromSubmissionIdCache {
+    pub submissions_value: Option<Vec<Value>>,
+    pub submission: Option<Vec<Student>>,
 }

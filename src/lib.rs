@@ -53,23 +53,23 @@
 //!     CanvasResultSingleCourse::ErrCredentials(err) => eprintln!("Credentials error: {}", err),
 //! }
 //! ```
-mod connection; // Manages HTTP connections and requests to the Canvas API.
-pub mod credentials; // Handles the storage and retrieval of Canvas API credentials.
-pub mod course; // Contains functionalities related to Canvas courses.
-mod student; // Deals with operations related to students in Canvas courses.
 mod assignment; // Manages assignments within Canvas courses.
-mod submission; // Handles submissions for assignments in Canvas.
 pub mod canvas;
+mod connection; // Manages HTTP connections and requests to the Canvas API.
+pub mod course; // Contains functionalities related to Canvas courses.
+pub mod credentials; // Handles the storage and retrieval of Canvas API credentials.
 pub mod rubric_downloaded;
 pub mod rubric_submission;
+mod student; // Deals with operations related to students in Canvas courses.
+mod submission; // Handles submissions for assignments in Canvas.
 
 // Exports key structures for external use.
-pub use credentials::CanvasCredentials;
-pub use course::{Course, CourseInfo};
-pub use student::{Student, StudentInfo};
-pub use assignment::{Assignment, AssignmentInfo};
-pub use submission::{Submission, SubmissionType};
+pub use assignment::{Assignment, AssignmentInfo, GetSubmissionFromSubmissionIdCache};
 pub use canvas::{Canvas, CanvasResultCourses, CanvasResultSingleCourse};
+pub use course::{Course, CourseInfo};
+pub use credentials::CanvasCredentials;
+pub use student::{Student, StudentInfo};
+pub use submission::{Submission, SubmissionType};
 
 // #[cfg(test)]
 // mod tests {
@@ -83,14 +83,16 @@ pub use canvas::{Canvas, CanvasResultCourses, CanvasResultSingleCourse};
 //     // }
 // }
 
-
 #[cfg(test)]
 mod tests {
-    use reqwest::blocking::Client;
-    use crate::{CanvasCredentials};
     use crate::canvas::create_rubric;
+    use crate::rubric_submission::{
+        CanvasRubricSubmission, CriterionSubmission, RatingSubmission, RubricAssociationSubmission,
+        RubricSubmissionDetails,
+    };
+    use crate::CanvasCredentials;
+    use reqwest::blocking::Client;
     use std::collections::HashMap;
-    use crate::rubric_submission::{CanvasRubricSubmission, CriterionSubmission, RatingSubmission, RubricAssociationSubmission, RubricSubmissionDetails};
 
     #[test]
     fn test_create_rubric() {
@@ -138,7 +140,8 @@ mod tests {
         // Define Canvas credentials for the test
         let credentials = CanvasCredentials {
             url_canvas: "https://pucpr.beta.instructure.com/api/v1".to_string(),
-            token_canvas: "20746~JhvKCm9LGeQ7zf4yKXn3YmPvtK6LFrayT2La9VNZ2vE8QHWHBWQJxcFHY6xKBYeh".to_string(),
+            token_canvas: "20746~JhvKCm9LGeQ7zf4yKXn3YmPvtK6LFrayT2La9VNZ2vE8QHWHBWQJxcFHY6xKBYeh"
+                .to_string(),
         };
 
         // Initialize the HTTP client
