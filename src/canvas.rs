@@ -691,10 +691,12 @@ pub fn get_all_submissions(
         let params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
 
         // Convertendo (&str, String) para (String, String)
-        let converted_params: Vec<(String, String)> = params
+        let mut converted_params: Vec<(String, String)> = params
             .into_iter()
             .map(|(key, value)| (key.to_string(), value))
             .collect();
+
+        converted_params.push(("include[]".to_string(), "submission_comments".to_string()));
 
         match send_http_request(
             client,
@@ -1456,6 +1458,57 @@ pub fn create_rubric(
         Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             "Error creating rubric",
+        )))
+    }
+}
+
+/// Função para apagar um comentário de uma submissão no Canvas.
+///
+/// Esta função envia uma requisição DELETE para o Canvas API para remover um comentário
+/// de uma submissão de um estudante em uma atividade.
+///
+/// # Argumentos
+///
+/// - `client`: Cliente HTTP para realizar as requisições.
+/// - `canvas_info`: Credenciais do Canvas, incluindo o token de acesso.
+/// - `course_id`: ID do curso onde está a submissão.
+/// - `assignment_id`: ID da atividade onde a submissão foi realizada.
+/// - `user_id`: ID do estudante que realizou a submissão.
+/// - `comment_id`: ID do comentário que será apagado.
+///
+/// # Retorno
+///
+/// Retorna um `Result<(), Box<dyn Error>>` que indica sucesso ou falha na operação.
+pub fn delete_comment(
+    client: &Client,
+    canvas_info: &CanvasCredentials,
+    course_id: u64,
+    assignment_id: u64,
+    user_id: u64,
+    comment_id: u64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Montar a URL para apagar o comentário
+    let url = format!(
+        "{}/courses/{}/assignments/{}/submissions/{}/comments/{}",
+        canvas_info.url_canvas, course_id, assignment_id, user_id, comment_id
+    );
+
+    // Chamar send_http_request usando o método DELETE
+    let response = send_http_request(
+        client,
+        HttpMethod::Delete,  // Usando o novo método DELETE
+        &url,
+        canvas_info,
+        vec![],  // Nenhum parâmetro adicional necessário
+    )?;
+
+    // Verifica se a requisição foi bem-sucedida
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Falha ao apagar comentário: HTTP {}", response.status()),
         )))
     }
 }

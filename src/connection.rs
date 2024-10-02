@@ -44,6 +44,7 @@ pub enum HttpMethod {
     Get,
     Put(serde_json::Value),
     Post(serde_json::Value),
+    Delete,
 }
 
 // Type alias for HTTP request results.
@@ -73,6 +74,42 @@ lazy_static! {
 ///
 /// Error handling is basic, with network or client errors resulting in a generic error code (0).
 /// This function is designed to be called within a retry loop implemented in `send_http_request`.
+// fn send_http_request_single_attempt(
+//     client: &reqwest::blocking::Client,
+//     method: HttpMethod,
+//     url: &str,
+//     canvas_info: &CanvasCredentials,
+//     params: Vec<(String, String)>,
+// ) -> HttpRequestResult {
+//     // Constructing the request based on the HttpMethod.
+//     // This pattern matching ensures that the correct request type is constructed
+//     // with the appropriate method-specific data, such as a JSON body for PUT requests.
+//     let request_builder = match &method {
+//         HttpMethod::Get => client
+//             .get(url)
+//             .bearer_auth(&canvas_info.token_canvas)
+//             .query(&params),
+//         HttpMethod::Put(body) => client
+//             .put(url)
+//             .bearer_auth(&canvas_info.token_canvas)
+//             .json(body),
+//         HttpMethod::Post(body) => client
+//             .post(url)
+//             .bearer_auth(&canvas_info.token_canvas)
+//             .json(body), // Usando json para o método POST
+//     };
+//
+//     // Sending the request and handling the response.
+//     // The response is evaluated for success, with successful responses returned directly
+//     // and unsuccessful ones resulting in their status code being returned as an error.
+//     let response = request_builder.send();
+//
+//     match response {
+//         Ok(response) if response.status().is_success() => Ok(response),
+//         Ok(response) => Err(response.status().as_u16()),
+//         Err(_) => Err(0), // Generic error code for network or HTTP client errors.
+//     }
+// }
 fn send_http_request_single_attempt(
     client: &reqwest::blocking::Client,
     method: HttpMethod,
@@ -80,9 +117,7 @@ fn send_http_request_single_attempt(
     canvas_info: &CanvasCredentials,
     params: Vec<(String, String)>,
 ) -> HttpRequestResult {
-    // Constructing the request based on the HttpMethod.
-    // This pattern matching ensures that the correct request type is constructed
-    // with the appropriate method-specific data, such as a JSON body for PUT requests.
+    // Construir a requisição com base no método HTTP
     let request_builder = match &method {
         HttpMethod::Get => client
             .get(url)
@@ -95,20 +130,23 @@ fn send_http_request_single_attempt(
         HttpMethod::Post(body) => client
             .post(url)
             .bearer_auth(&canvas_info.token_canvas)
-            .json(body), // Usando json para o método POST
+            .json(body),
+        HttpMethod::Delete => client
+            .delete(url)
+            .bearer_auth(&canvas_info.token_canvas)
+            .query(&params),  // DELETE também pode usar parâmetros de consulta
     };
 
-    // Sending the request and handling the response.
-    // The response is evaluated for success, with successful responses returned directly
-    // and unsuccessful ones resulting in their status code being returned as an error.
+    // Enviar a requisição e verificar a resposta
     let response = request_builder.send();
 
     match response {
         Ok(response) if response.status().is_success() => Ok(response),
         Ok(response) => Err(response.status().as_u16()),
-        Err(_) => Err(0), // Generic error code for network or HTTP client errors.
+        Err(_) => Err(0), // Código de erro genérico para falhas na requisição
     }
 }
+
 
 /// Sends an HTTP request with retry logic.
 ///

@@ -1,6 +1,6 @@
 // Import necessary crates and modules
 use crate::rubric_downloaded::RubricDownloaded;
-use crate::submission::{Submission, SubmissionType};
+use crate::submission::{Submission, SubmissionType, Comment};
 use crate::{canvas, CourseInfo, Student};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -98,6 +98,27 @@ impl Assignment {
                                 .collect()
                         });
 
+                    // Processa os comentários da submissão
+                    let comments = j["submission_comments"]
+                        .as_array()
+                        .map_or(Vec::new(), |comments_array| {
+                            comments_array
+                                .iter()
+                                .filter_map(|comment| {
+                                    // Captura o ID e o conteúdo do comentário
+                                    let id = comment["id"].as_u64();
+                                    let content = comment["comment"].as_str().map(String::from);
+
+                                    // Se ambos o ID e o conteúdo do comentário existirem
+                                    if let (Some(id), Some(content)) = (id, content) {
+                                        Some(Comment { id, content })
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect()
+                        });
+
                     return Some(Submission {
                         id: j["id"].as_u64().unwrap(),
                         assignment_id: j["assignment_id"].as_u64().unwrap(),
@@ -116,6 +137,7 @@ impl Assignment {
                         student_info: student.info.clone(),
                         file_ids,
                         assignment_info,
+                        comments, // Adiciona os comentários à submissão
                     });
                 }
             }
@@ -252,6 +274,34 @@ impl Assignment {
         }
     }
 
+    /// Deleta um comentário de uma submissão associada a esta tarefa.
+    ///
+    /// Este método chama a função `delete_comment` definida em `canvas.rs` para
+    /// realizar a operação de deletar o comentário.
+    ///
+    /// # Parâmetros
+    /// - `client`: O cliente HTTP para realizar a requisição.
+    /// - `student_id`: O ID do estudante cuja submissão contém o comentário a ser deletado.
+    /// - `comment_id`: O ID do comentário que será deletado.
+    ///
+    /// # Retorno
+    /// Retorna `Ok(())` em caso de sucesso ou um `Err(Box<dyn Error>)` em caso de falha.
+    pub fn delete_comment(
+        &self,
+        student_id: u64,
+        comment_id: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let client = &reqwest::blocking::Client::new();
+        // Chama a função delete_comment já implementada em canvas.rs
+        canvas::delete_comment(
+            client,
+            &self.info.course_info.canvas_info, // Credenciais do Canvas
+            self.info.course_info.id,           // ID do curso
+            self.info.id,                       // ID da tarefa (assignment_id)
+            student_id,                         // ID do estudante
+            comment_id,                         // ID do comentário a ser deletado
+        )
+    }
 }
 pub struct GetSubmissionFromSubmissionIdCache {
     pub submissions_value: Option<Vec<Value>>,

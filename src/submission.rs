@@ -57,6 +57,27 @@ impl SubmissionType {
 /// Examples of related functions include `fetch_submissions_for_assignments` and `fetch_assignments_and_latest_submissions`,
 /// which likely utilize this struct to represent and handle student submissions.
 /// Enum representing the type of submission.
+// #[derive(Serialize, Deserialize, Debug, Clone)]
+// pub struct Submission {
+//     pub id: u64,                                 // Submission's unique identifier
+//     pub assignment_id: u64,                      // Assignment's unique identifier
+//     pub score: Option<f64>,                      // Graded score, optional
+//     pub submitted_at: Option<DateTime<Utc>>,     // Submission timestamp, optional
+//     pub submission_type: Option<SubmissionType>, // Tipo de submissão, agora tratado como Option
+//     #[serde(skip)]
+//     pub student_info: Arc<StudentInfo>,
+//     #[serde(skip)]
+//     pub assignment_info: Arc<AssignmentInfo>,
+//     #[serde(skip)]
+//     pub file_ids: Vec<u64>, // IDs dos arquivos associados
+// }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Comment {
+    pub id: u64,        // ID do comentário
+    pub content: String, // Conteúdo do comentário
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Submission {
     pub id: u64,                                 // Submission's unique identifier
@@ -70,7 +91,10 @@ pub struct Submission {
     pub assignment_info: Arc<AssignmentInfo>,
     #[serde(skip)]
     pub file_ids: Vec<u64>, // IDs dos arquivos associados
+    pub comments: Vec<Comment>,  // Lista de comentários, agora incluindo o ID do comentário
 }
+
+
 
 impl Submission {
     /// Checks if the submission is late by comparing `submitted_at` with `due_at`.
@@ -253,5 +277,32 @@ impl Submission {
         } else {
             Ok(Some(downloaded_files))
         }
+    }
+
+    // Deleta um comentário associado a esta submissão.
+    ///
+    /// Este método chama a função `delete_comment` definida em `canvas.rs` para
+    /// realizar a operação de deletar o comentário.
+    ///
+    /// # Parâmetros
+    /// - `client`: O cliente HTTP para realizar a requisição.
+    /// - `comment_id`: O ID do comentário que será deletado.
+    ///
+    /// # Retorno
+    /// Retorna `Ok(())` em caso de sucesso ou um `Err(Box<dyn Error>)` em caso de falha.
+    pub fn delete_comment(
+        &self,
+        comment_id: u64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let client = &reqwest::blocking::Client::new();
+        // Chama a função delete_comment já implementada em canvas.rs
+        canvas::delete_comment(
+            client,
+            &self.assignment_info.course_info.canvas_info, // Credenciais do Canvas
+            self.assignment_info.course_info.id,           // ID do curso
+            self.assignment_id,                            // ID da tarefa (assignment_id)
+            self.student_info.id,                          // ID do estudante
+            comment_id                                     // ID do comentário a ser deletado
+        )
     }
 }
