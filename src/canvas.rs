@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use urlencoding::decode;
 
@@ -264,6 +264,8 @@ impl Canvas {
                 course_code: course_code.clone(),
                 canvas_info: Arc::clone(canvas_info),
                 abbreviated_name: parse_course_name(name.as_str(), course_code.as_str()), // Parse the course name
+                students_cache: Mutex::new(Vec::new()),
+                assignments_cache: Mutex::new(Vec::new()),
             }),
         })
     }
@@ -679,6 +681,7 @@ pub fn get_all_submissions(
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: u64,
+    group_submissions: bool,
 ) -> Result<Vec<Value>, Box<dyn Error>> {
     let url = format!(
         "{}/courses/{}/assignments/{}/submissions",
@@ -688,7 +691,11 @@ pub fn get_all_submissions(
     let mut all_submissions = Vec::new();
     let mut page = 1;
     loop {
-        let params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
+        let mut params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
+
+        if group_submissions {
+            params.push(("grouped", "true".to_string()));
+        }
 
         // Convertendo (&str, String) para (String, String)
         let mut converted_params: Vec<(String, String)> = params
@@ -919,6 +926,9 @@ pub fn convert_json_to_assignment(
         .map(|due_str| DateTime::parse_from_rfc3339(due_str).ok().map(|dt| dt.with_timezone(&Utc)))
         .flatten(); // Transforma o Result em Option e remove erros de parsing
 
+    // Verifica se o assignment está configurado para submissões em grupo e extrai o group_category_id
+    let group_category_id = assignment["group_category_id"].as_u64();
+
     Some(Assignment {
         info: Arc::new(AssignmentInfo {
             id,
@@ -926,6 +936,7 @@ pub fn convert_json_to_assignment(
             description,
             rubric_id,                            // Armazena o ID da rubrica
             due_at,                               // Adiciona o campo due_at (opcional)
+            group_category_id,
             course_info: Arc::clone(course_info), // Mantém a referência ao CourseInfo
         }),
     })
@@ -1276,9 +1287,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use crate::rubric_submission::CanvasRubricSubmission;
 
-/// Downloads a submission file from the Canvas LMS.
+/// Downloads a file from the Canvas LMS.
 ///
-/// This function sends an HTTP request to retrieve a file related to a submission
+/// This function sends an HTTP request to retrieve a file
 /// using the Canvas API. It saves the downloaded file locally at the specified path.
 ///
 /// # Arguments
@@ -1289,7 +1300,7 @@ use crate::rubric_submission::CanvasRubricSubmission;
 ///
 /// # Returns
 /// - `Result<(), Box<dyn Error>>`: Returns Ok on success or an Error on failure.
-pub fn download_submission_file(
+pub fn download_file(
     client: &Client,
     canvas_info: &CanvasCredentials,
     file_id: u64,
@@ -1512,3 +1523,56 @@ pub fn delete_comment(
         )))
     }
 }
+
+fn fetch_groups_for_category(
+    client: &reqwest::blocking::Client,
+    group_category_id: u64,
+    canvas_info: &CanvasCredentials,
+) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    let url = format!("{}/group_categories/{}/groups", canvas_info.url_canvas, group_category_id);
+    let response = send_http_request(client, HttpMethod::Get, &url, canvas_info, vec![])?;
+    let groups: Vec<serde_json::Value> = response.json()?;
+    Ok(groups)
+}
+
+pub fn fetch_groups_for_assignment(
+    client: &reqwest::blocking::Client,
+    assignment_info: &AssignmentInfo,
+    canvas_info: &CanvasCredentials,
+) -> Result<HashMap<u64, Vec<u64>>, Box<dyn std::error::Error>> {
+    let mut group_student_map = HashMap::new();
+
+    // Verificar se o assignment possui um `group_category_id`
+    if let Some(group_category_id) = assignment_info.group_category_id {
+        // Obter os grupos da categoria de grupo
+        let groups = fetch_groups_for_category(client, group_category_id, canvas_info)?;
+
+        // Itera sobre os grupos e busca os estudantes de cada grupo
+        for group in groups {
+            if let Some(group_id) = group["id"].as_u64() {
+                let group_url = format!("{}/groups/{}/users", canvas_info.url_canvas, group_id);
+                let group_response = send_http_request(client, HttpMethod::Get, &group_url, canvas_info, vec![])?;
+                let users: Vec<serde_json::Value> = group_response.json()?;
+
+                // Coleta os IDs dos estudantes para o grupo
+                let mut student_ids = Vec::new();
+                for user in users {
+                    if let Some(student_id) = user["id"].as_u64() {
+                        student_ids.push(student_id);
+                    }
+                }
+
+                // Adiciona o grupo e os estudantes ao mapa
+                group_student_map.insert(group_id, student_ids);
+            }
+        }
+    } else {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Assignment is not configured for group submissions",
+        )));
+    }
+
+    Ok(group_student_map)
+}
+

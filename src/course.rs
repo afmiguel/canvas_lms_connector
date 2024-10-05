@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::process::exit;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 /// Structure holding detailed information about a Canvas course.
 ///
@@ -22,7 +23,7 @@ use std::sync::Arc;
 /// - `name`: Official name of the course.
 /// - `course_code`: Short identifier or code for the course.
 /// - `canvas_info`: Shared reference to Canvas credentials and API URL, enabling API interactions.
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CourseInfo {
     pub id: u64,
     pub name: String,
@@ -31,6 +32,10 @@ pub struct CourseInfo {
     pub canvas_info: Arc<CanvasCredentials>,
     #[serde(skip)]
     pub abbreviated_name: Option<CourseNameDetails>,
+    #[serde(skip)]
+    pub students_cache: Mutex<Vec<Student>>,
+    #[serde(skip)]
+    pub assignments_cache: Mutex<Vec<Assignment>>,
 }
 
 /// High-level representation of a Canvas course.
@@ -44,6 +49,21 @@ pub struct CourseInfo {
 #[derive(Clone)]
 pub struct Course {
     pub info: Arc<CourseInfo>,
+}
+
+// Implementando Clone manualmente
+impl Clone for CourseInfo {
+    fn clone(&self) -> Self {
+        CourseInfo {
+            id: self.id,
+            name: self.name.clone(),
+            course_code: self.course_code.clone(),
+            canvas_info: Arc::clone(&self.canvas_info),
+            abbreviated_name: self.abbreviated_name.clone(),
+            students_cache: Mutex::new(self.students_cache.lock().unwrap().clone()),
+            assignments_cache: Mutex::new(self.assignments_cache.lock().unwrap().clone()),
+        }
+    }
 }
 
 impl CourseInfo {
@@ -66,7 +86,27 @@ impl CourseInfo {
     /// }
     /// ```
     pub fn fetch_students(&self) -> Result<Vec<Student>, Box<dyn Error>> {
-        canvas::fetch_students(self)
+        {
+            let students_cache = self.students_cache.lock().unwrap();
+            if !students_cache.is_empty(){
+                return Ok(students_cache.clone());
+            }
+        }
+        match canvas::fetch_students(self){
+            Ok(students) => {
+                let mut students_cache = self.students_cache.lock().unwrap();
+                students_cache.extend(students.clone());
+                Ok(students_cache.to_vec())
+            },
+            Err(e) => Err(e)
+        }
+    }
+
+    pub fn clear_cache(&self){
+        let mut students_cache = self.students_cache.lock().unwrap();
+        students_cache.clear();
+        let mut assignments_cache = self.assignments_cache.lock().unwrap();
+        assignments_cache.clear();
     }
 }
 
@@ -98,6 +138,10 @@ impl Course {
         self.info.fetch_students()
     }
 
+    pub fn clear_cache(&self){
+        self.info.clear_cache();
+    }
+
     /// Retrieves assignments for this course.
     ///
     /// Queries the Canvas API to fetch all assignments related to the course. Uses course ID and
@@ -116,7 +160,20 @@ impl Course {
     /// }
     /// ```
     pub fn fetch_assignments(&self) -> Result<Vec<Assignment>, Box<dyn Error>> {
-        canvas::fetch_assignments(self)
+        {
+            let assignments_cache = self.info.assignments_cache.lock().unwrap();
+            if !assignments_cache.is_empty(){
+                return Ok(assignments_cache.clone());
+            }
+        }
+        match canvas::fetch_assignments(self){
+            Ok(assignments) => {
+                let mut assignments_cache = self.info.assignments_cache.lock().unwrap();
+                assignments_cache.extend(assignments.clone());
+                Ok(assignments_cache.to_vec())
+            },
+            Err(e) => Err(e)
+        }
     }
 
     pub fn choose_assignment(
@@ -206,14 +263,18 @@ impl Course {
         student_id: u64,
         new_score: Option<f64>,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::update_assignment_score(
+        let result = canvas::update_assignment_score(
             client,
             &self.info.canvas_info,
             self.info.id,
             assignment_id,
             student_id,
             new_score,
-        )
+        );
+        if result.is_ok() {
+            self.clear_cache();
+        }
+        result
     }
 
     /// Adds a file comment to a student's assignment submission.
@@ -248,7 +309,7 @@ impl Course {
         file_path: Option<&str>,
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::comment_with_file(
+        let result = canvas::comment_with_file(
             client,
             &self.info.canvas_info,
             self.info.id,
@@ -256,7 +317,11 @@ impl Course {
             student_id,
             file_path,
             comment_text,
-        )
+        );
+        if result.is_ok() {
+            self.clear_cache();
+        }
+        result
     }
 
     pub fn comment_with_binary_file(
@@ -268,7 +333,7 @@ impl Course {
         file_content: Option<&Vec<u8>>,
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::comment_with_binary_file(
+        let result = canvas::comment_with_binary_file(
             client,
             &self.info.canvas_info,
             self.info.id,
@@ -277,7 +342,12 @@ impl Course {
             file_name,
             file_content,
             comment_text,
-        )
+        );
+        if result.is_ok() {
+            self.clear_cache();
+        }
+        result
+
     }
 
     pub fn create_assignment(
@@ -285,12 +355,17 @@ impl Course {
         client: &Client,
         assignment_name: &str,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::create_assignment(
+        let result = canvas::create_assignment(
             client,
             &self.info.canvas_info,
             self.info.id,
             assignment_name,
-        )
+        );
+        if result.is_ok() {
+            self.clear_cache();
+        }
+        result
+
     }
 
     pub fn create_announcement(
@@ -299,7 +374,11 @@ impl Course {
         title: &str,
         message: &str,
     ) -> Result<(), Box<dyn Error>> {
-        canvas::create_announcement(client, &self.info.canvas_info, self.info.id, title, message)
+        let result = canvas::create_announcement(client, &self.info.canvas_info, self.info.id, title, message);
+        if result.is_ok() {
+            self.clear_cache();
+        }
+        result
     }
 
     /// Loads the information of a specific course from the Canvas LMS based on the course ID.

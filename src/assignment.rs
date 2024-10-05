@@ -1,12 +1,13 @@
 // Import necessary crates and modules
 use crate::rubric_downloaded::RubricDownloaded;
-use crate::submission::{Submission, SubmissionType, Comment};
+use crate::submission::{Comment, Submission, SubmissionType};
 use crate::{canvas, CourseInfo, Student};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::error::Error;
 use std::sync::Arc;
+use std::collections::HashMap;
 
 /// Structure to hold detailed information about an assignment in the Canvas system.
 ///
@@ -29,6 +30,7 @@ pub struct AssignmentInfo {
     pub description: Option<String>,
     pub due_at: Option<DateTime<Utc>>, // Campo opcional para a data de vencimento
     pub rubric_id: Option<u64>,
+    pub group_category_id: Option<u64>,
     #[serde(skip)]
     pub course_info: Arc<CourseInfo>,
 }
@@ -57,19 +59,61 @@ impl Assignment {
         students: &Vec<Student>,
     ) -> Result<Vec<Submission>, Box<dyn std::error::Error>> {
         let client = &reqwest::blocking::Client::new();
+
+        let groups = match canvas::fetch_groups_for_assignment(
+            client,
+            self.info.as_ref(),
+            self.info.course_info.canvas_info.as_ref(),
+        ) {
+            Ok(groups) => {
+                if groups.is_empty() {
+                    None
+                } else {
+                    Some(groups)
+                }
+            }
+            Err(_) => {
+                None
+            }
+        };
+
         match canvas::get_all_submissions(
             client,
             self.info.course_info.canvas_info.as_ref(),
             self.info.course_info.id,
             self.info.id,
+            groups.is_some(),
         ) {
             Ok(submissions_value) => {
+                // Recupera todos os estudantes do curso
+                let all_course_students = self.info.course_info.fetch_students()?;
+
                 let submissions = submissions_value
                     .iter()
                     .filter_map(|j| {
-                        Assignment::convert_json_to_submission(students, j, self.info.clone())
+                        Assignment::convert_json_to_submission(&all_course_students, j, self.info.clone(), &groups)
                     })
                     .collect::<Vec<_>>();
+
+                // Elimina as submissões que não são relacionadas aos estudantes de students
+                let submissions = submissions
+                    .into_iter()
+                    .filter(|submission| {
+                        submission.students_info.iter().any(|si| {
+                            students.iter().any(|student| student.info.id == si.id)
+                        })
+                    }
+                    )
+                    .collect::<Vec<_>>();
+
+                // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+                // println!(
+                //     "Submissões ({}/{}):\n{:#?}",
+                //     submissions.len(),
+                //     submissions_value.len(),
+                //     submissions
+                // );
+                // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 
                 Ok(submissions)
             }
@@ -82,11 +126,12 @@ impl Assignment {
 
     /// Função que converte o JSON de submissões em uma estrutura `Submission`.
     fn convert_json_to_submission(
-        students: &Vec<Student>,
+        all_course_students: &Vec<Student>,
         j: &Value,
         assignment_info: Arc<AssignmentInfo>,
+        groups: &Option<HashMap<u64, Vec<u64>>>,
     ) -> Option<Submission> {
-        for student in students {
+        for student in all_course_students {
             if let Some(user_id) = j["user_id"].as_u64() {
                 if student.info.id == user_id {
                     let file_ids = j["attachments"]
@@ -99,25 +144,53 @@ impl Assignment {
                         });
 
                     // Processa os comentários da submissão
-                    let comments = j["submission_comments"]
-                        .as_array()
-                        .map_or(Vec::new(), |comments_array| {
-                            comments_array
-                                .iter()
-                                .filter_map(|comment| {
-                                    // Captura o ID e o conteúdo do comentário
-                                    let id = comment["id"].as_u64();
-                                    let content = comment["comment"].as_str().map(String::from);
+                    let comments =
+                        j["submission_comments"]
+                            .as_array()
+                            .map_or(Vec::new(), |comments_array| {
+                                comments_array
+                                    .iter()
+                                    .filter_map(|comment| {
+                                        // Captura o ID e o conteúdo do comentário
+                                        let id = comment["id"].as_u64();
+                                        let content = comment["comment"].as_str().map(String::from);
 
-                                    // Se ambos o ID e o conteúdo do comentário existirem
-                                    if let (Some(id), Some(content)) = (id, content) {
-                                        Some(Comment { id, content })
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        });
+                                        // Se ambos o ID e o conteúdo do comentário existirem
+                                        if let (Some(id), Some(content)) = (id, content) {
+                                            Some(Comment { id, content })
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect()
+                            });
+
+                    // Localiza o grupo do estudante
+                    let group_id = groups.as_ref().and_then(|groups| {
+                        groups.iter().find(|(_, students)| students.contains(&student.info.id))
+                    });
+
+                    // Se achou um group_id, cria um vetor Vec<StudentInfo> com os estudantes do grupo
+                    let mut students_info = group_id.map_or(Vec::new(), |(_, student_ids)| {
+                        student_ids
+                            .iter()
+                            .filter_map(|student_id| {
+                                all_course_students
+                                    .iter()
+                                    .find(|student| student.info.id == *student_id)
+                                    .map(|student| student.info.clone())
+                            })
+                            .collect()
+                    });
+
+                    if students_info.is_empty() {
+                        // Se está vazio significa que não é por grupo. Inclui o estudante com user_id
+                        if let Some(student) = all_course_students.iter().find(|student| student.info.id == user_id) {
+                            students_info.push(student.info.clone());
+                        } else {
+                            panic!("Falha ao associar um estudante a uma submissão.");
+                        }
+                    }
 
                     return Some(Submission {
                         id: j["id"].as_u64().unwrap(),
@@ -134,10 +207,11 @@ impl Assignment {
                             "none" => SubmissionType::None,
                             _ => SubmissionType::Other,
                         }),
-                        student_info: student.info.clone(),
+                        // student_info: student.info.clone(),
+                        students_info,
                         file_ids,
                         assignment_info,
-                        comments, // Adiciona os comentários à submissão
+                        comments,
                     });
                 }
             }
@@ -220,25 +294,26 @@ impl Assignment {
     pub fn get_submission_from_submission_id(
         &self,
         submission_id: u64,
-        mut cache: Option<&mut GetSubmissionFromSubmissionIdCache>, // Declarado como mutável
+        mut cache: Option<&mut GetSubmissionFromSubmissionIdCache>,
     ) -> Result<Submission, Box<dyn Error>> {
         // Fetch all submissions for the assignment
         let client = &reqwest::blocking::Client::new();
 
         // Variáveis para submissões e estudantes
         let submissions_value: Vec<Value>;
-        let students_value: Vec<Student>;
+        let all_students_value: Vec<Student>;
 
         // Primeiro: lidar com o cache de submissões
         if let Some(ref mut cache) = cache {
             if let Some(submissions) = cache.submissions_value.as_ref() {
-                submissions_value = submissions.clone();  // Usa submissões do cache
+                submissions_value = submissions.clone(); // Usa submissões do cache
             } else {
                 submissions_value = canvas::get_all_submissions(
                     client,
                     self.info.course_info.canvas_info.as_ref(),
                     self.info.course_info.id,
                     self.info.id,
+                    self.info.group_category_id.is_some(),
                 )?; // Faz requisição se não houver cache
                 cache.submissions_value = Some(submissions_value.clone()); // Atualiza o cache
             }
@@ -248,25 +323,45 @@ impl Assignment {
                 self.info.course_info.canvas_info.as_ref(),
                 self.info.course_info.id,
                 self.info.id,
+                self.info.group_category_id.is_some(),
             )?; // Faz requisição se o cache não for fornecido
         }
 
         // Segundo: lidar com o cache de estudantes
         if let Some(ref mut cache) = cache {
             if let Some(students) = cache.submission.as_ref() {
-                students_value = students.clone();  // Usa estudantes do cache
+                all_students_value = students.clone(); // Usa estudantes do cache
             } else {
-                students_value = self.info.course_info.fetch_students()?; // Faz requisição se não houver cache
-                cache.submission = Some(students_value.clone()); // Atualiza o cache
+                all_students_value = self.info.course_info.fetch_students()?; // Faz requisição se não houver cache
+                cache.submission = Some(all_students_value.clone()); // Atualiza o cache
             }
         } else {
-            students_value = self.info.course_info.fetch_students()?; // Faz requisição se o cache não for fornecido
+            all_students_value = self.info.course_info.fetch_students()?; // Faz requisição se o cache não for fornecido
         }
+
+        let groups = match canvas::fetch_groups_for_assignment(
+            client,
+            self.info.as_ref(),
+            self.info.course_info.canvas_info.as_ref(),
+        ) {
+            Ok(groups) => {
+                if groups.is_empty() {
+                    None
+                } else {
+                    Some(groups)
+                }
+            }
+            Err(_) => {
+                None
+            }
+        };
 
         // Tentar encontrar a submissão com o ID fornecido
         match submissions_value
             .iter()
-            .filter_map(|j| Assignment::convert_json_to_submission(&students_value, j, self.info.clone()))
+            .filter_map(|j| {
+                Assignment::convert_json_to_submission(&all_students_value, j, self.info.clone(), &groups)
+            })
             .find(|submission| submission.id == submission_id)
         {
             Some(submission) => Ok(submission),
@@ -306,4 +401,13 @@ impl Assignment {
 pub struct GetSubmissionFromSubmissionIdCache {
     pub submissions_value: Option<Vec<Value>>,
     pub submission: Option<Vec<Student>>,
+}
+
+impl GetSubmissionFromSubmissionIdCache {
+    pub fn new() -> Self {
+        Self {
+            submissions_value: None,
+            submission: None,
+        }
+    }
 }

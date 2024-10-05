@@ -85,8 +85,10 @@ pub struct Submission {
     pub score: Option<f64>,                      // Graded score, optional
     pub submitted_at: Option<DateTime<Utc>>,     // Submission timestamp, optional
     pub submission_type: Option<SubmissionType>, // Tipo de submissão, agora tratado como Option
+    // #[serde(skip)]
+    // pub student_info: Arc<StudentInfo>,
     #[serde(skip)]
-    pub student_info: Arc<StudentInfo>,
+    pub students_info: Vec<Arc<StudentInfo>>,
     #[serde(skip)]
     pub assignment_info: Arc<AssignmentInfo>,
     #[serde(skip)]
@@ -177,13 +179,20 @@ impl Submission {
         file_path: Option<&str>,
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
+
+        // Pega o primeiro estudante da lista
+        let student_info = match self.students_info.first(){
+            Some(student_info) => student_info,
+            None => return Err("No student info found".into())
+        };
+
         let course = Course {
-            info: self.student_info.course_info.clone(),
+            info: student_info.course_info.clone(),
         };
         course.comment_with_file(
             client,
             self.assignment_id,
-            self.student_info.id,
+            student_info.id,
             file_path,
             comment_text,
         )
@@ -216,12 +225,20 @@ impl Submission {
         client: &Client,
         new_score: Option<f64>,
     ) -> Result<(), Box<dyn Error>> {
+
+        // Pega o primeiro estudante da lista
+        let student_info = match self.students_info.first(){
+            Some(student_info) => student_info,
+            None => return Err("No student info found".into())
+        };
+
+
         let course = Course {
-            info: self.student_info.course_info.clone(),
+            info: student_info.course_info.clone(),
         };
 
         let ret =
-            course.update_assignment_score(client, self.assignment_id, self.student_info.id, new_score);
+            course.update_assignment_score(client, self.assignment_id, student_info.id, new_score);
         self.score = new_score;
         ret
     }
@@ -255,12 +272,18 @@ impl Submission {
         // Vetor para armazenar os caminhos completos dos arquivos baixados
         let mut downloaded_files = Vec::new();
 
+        // Pega o primeiro estudante da lista
+        let student_info = match self.students_info.first(){
+            Some(student_info) => student_info,
+            None => return Err("No student info found".into())
+        };
+
         // Itera sobre os IDs dos arquivos e faz o download de cada um
         for &file_id in &self.file_ids {
             // Faz o download do arquivo e obtém o caminho completo onde foi salvo
-            let file_path = canvas::download_submission_file(
+            let file_path = canvas::download_file(
                 client,
-                &self.student_info.course_info.canvas_info, // Passa as credenciais do Canvas
+                &student_info.course_info.canvas_info, // Passa as credenciais do Canvas
                 file_id,
                 output_dir, // Caminho onde o arquivo será salvo
             )?;
@@ -295,13 +318,20 @@ impl Submission {
         comment_id: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let client = &reqwest::blocking::Client::new();
+
+        // Pega o primeiro estudante da lista
+        let student_info = match self.students_info.first(){
+            Some(student_info) => student_info,
+            None => return Err("No student info found".into())
+        };
+
         // Chama a função delete_comment já implementada em canvas.rs
         canvas::delete_comment(
             client,
             &self.assignment_info.course_info.canvas_info, // Credenciais do Canvas
             self.assignment_info.course_info.id,           // ID do curso
             self.assignment_id,                            // ID da tarefa (assignment_id)
-            self.student_info.id,                          // ID do estudante
+            student_info.id,                          // ID do estudante
             comment_id                                     // ID do comentário a ser deletado
         )
     }
