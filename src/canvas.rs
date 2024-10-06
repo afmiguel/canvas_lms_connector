@@ -1,6 +1,6 @@
 use crate::connection::{send_http_request, HttpMethod, SYNC_ATTEMPT};
 use crate::{
-    course, Assignment, AssignmentInfo, CanvasCredentials, Course, CourseInfo, Student,
+    canvas, course, Assignment, AssignmentInfo, CanvasCredentials, Course, CourseInfo, Student,
     StudentInfo, Submission,
 };
 use course::parse_course_name;
@@ -684,19 +684,23 @@ pub fn get_all_submissions(
     let mut all_submissions = Vec::new();
     let mut page = 1;
     loop {
-        let mut params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
+        let mut params = vec![
+            ("page", page.to_string()),
+            ("per_page", "100".to_string()),
+            ("include[]", "submission_comments".to_string()),
+        ];
 
         if group_submissions {
             params.push(("grouped", "true".to_string()));
         }
 
         // Convertendo (&str, String) para (String, String)
-        let mut converted_params: Vec<(String, String)> = params
+        let converted_params: Vec<(String, String)> = params
             .into_iter()
             .map(|(key, value)| (key.to_string(), value))
             .collect();
 
-        converted_params.push(("include[]".to_string(), "submission_comments".to_string()));
+        // converted_params.push(("include[]".to_string(), "submission_comments".to_string()));
 
         match send_http_request(
             HttpMethod::Get,
@@ -736,9 +740,9 @@ pub fn get_all_submissions(
 /// Função para buscar as submissões de um estudante para várias tarefas e carregar os file_ids.
 pub fn fetch_submissions_for_assignments<F>(
     canvas_info: &CanvasCredentials,
-    course_id: u64,
-    user_id: u64,
-    assignment_ids: &[u64],
+    student_info: &StudentInfo,
+    all_course_students: &Vec<Student>,
+    assignments_info: &Vec<Arc<AssignmentInfo>>,
     interaction: F,
 ) -> Result<Vec<Submission>, Box<dyn std::error::Error>>
 where
@@ -746,15 +750,29 @@ where
 {
     let mut submissions = Vec::new();
 
-    for &assignment_id in assignment_ids {
+    for assignments_info in assignments_info {
         let url = format!(
             "{}/courses/{}/assignments/{}/submissions/{}",
-            canvas_info.url_canvas, course_id, assignment_id, user_id
+            canvas_info.url_canvas,
+            student_info.course_info.id,
+            assignments_info.id,
+            student_info.id
         );
 
-        let params = Vec::new();
+        let params = vec![("include[]".to_string(), "submission_comments".to_string())];
 
         interaction();
+
+        let groups = match canvas::fetch_groups_for_assignment(assignments_info, canvas_info) {
+            Ok(groups) => {
+                if groups.is_empty() {
+                    None
+                } else {
+                    Some(groups)
+                }
+            }
+            Err(_) => None,
+        };
 
         for attempt in 0..SYNC_ATTEMPT {
             let response = send_http_request(HttpMethod::Get, &url, canvas_info, params.clone());
@@ -766,22 +784,36 @@ where
                         let response_json: Value = response.json()?; // Armazenando o JSON da resposta
 
                         // Deserializar a submissão do JSON
-                        let mut submission: Submission =
-                            serde_json::from_value(response_json.clone())?; // Usando clone para reutilizar o JSON
-
-                        // Extrair os file_ids dos anexos (se houver)
-                        let file_ids =
-                            if let Some(attachments) = response_json["attachments"].as_array() {
-                                attachments
-                                    .iter()
-                                    .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
-                                    .collect()
-                            } else {
-                                Vec::new() // Caso não haja arquivos, retorna um vetor vazio
+                        let submission: Submission =
+                            match Submission::convert_json_to_submission(
+                                all_course_students,
+                                &response_json,
+                                assignments_info,
+                                &groups,
+                            ) {
+                                Some(submission) => submission,
+                                None => {
+                                    return Err(Box::new(std::io::Error::new(
+                                        std::io::ErrorKind::Other,
+                                        "Failed to fetch submissions with error (z)".to_string(),
+                                    )))
+                                }
                             };
+                        // serde_json::from_value(response_json.clone())?; // Usando clone para reutilizar o JSON
 
-                        // Atribuir os file_ids extraídos à submissão
-                        submission.file_ids = file_ids;
+                        // // Extrair os file_ids dos anexos (se houver)
+                        // let file_ids =
+                        //     if let Some(attachments) = response_json["attachments"].as_array() {
+                        //         attachments
+                        //             .iter()
+                        //             .filter_map(|file| file["id"].as_u64()) // Extrai os file_ids
+                        //             .collect()
+                        //     } else {
+                        //         Vec::new() // Caso não haja arquivos, retorna um vetor vazio
+                        //     };
+
+                        // // Atribuir os file_ids extraídos à submissão
+                        // submission.file_ids = file_ids;
 
                         submissions.push(submission);
                     } else {

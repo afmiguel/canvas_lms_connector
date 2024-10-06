@@ -1,11 +1,10 @@
 // Import necessary crates and modules
 use crate::rubric_downloaded::RubricDownloaded;
-use crate::submission::{Comment, Submission, SubmissionType};
+use crate::submission::Submission;
 use crate::{canvas, CourseInfo, Student};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
 
@@ -85,10 +84,10 @@ impl Assignment {
                 let submissions = submissions_value
                     .iter()
                     .filter_map(|j| {
-                        Assignment::convert_json_to_submission(
+                        Submission::convert_json_to_submission(
                             &all_course_students,
                             j,
-                            self.info.clone(),
+                            &self.info.clone(),
                             &groups,
                         )
                     })
@@ -121,106 +120,6 @@ impl Assignment {
                 format!("Failed to fetch submissions with error: {}", e),
             ))),
         }
-    }
-
-    /// Função que converte o JSON de submissões em uma estrutura `Submission`.
-    fn convert_json_to_submission(
-        all_course_students: &Vec<Student>,
-        j: &Value,
-        assignment_info: Arc<AssignmentInfo>,
-        groups: &Option<HashMap<u64, Vec<u64>>>,
-    ) -> Option<Submission> {
-        for student in all_course_students {
-            if let Some(user_id) = j["user_id"].as_u64() {
-                if student.info.id == user_id {
-                    let file_ids = j["attachments"]
-                        .as_array()
-                        .map_or(Vec::new(), |attachments| {
-                            attachments
-                                .iter()
-                                .filter_map(|attachment| attachment["id"].as_u64())
-                                .collect()
-                        });
-
-                    // Processa os comentários da submissão
-                    let comments =
-                        j["submission_comments"]
-                            .as_array()
-                            .map_or(Vec::new(), |comments_array| {
-                                comments_array
-                                    .iter()
-                                    .filter_map(|comment| {
-                                        // Captura o ID e o conteúdo do comentário
-                                        let id = comment["id"].as_u64();
-                                        let content = comment["comment"].as_str().map(String::from);
-
-                                        // Se ambos o ID e o conteúdo do comentário existirem
-                                        if let (Some(id), Some(content)) = (id, content) {
-                                            Some(Comment { id, content })
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                    .collect()
-                            });
-
-                    // Localiza o grupo do estudante
-                    let group_id = groups.as_ref().and_then(|groups| {
-                        groups
-                            .iter()
-                            .find(|(_, students)| students.contains(&student.info.id))
-                    });
-
-                    // Se achou um group_id, cria um vetor Vec<StudentInfo> com os estudantes do grupo
-                    let mut students_info = group_id.map_or(Vec::new(), |(_, student_ids)| {
-                        student_ids
-                            .iter()
-                            .filter_map(|student_id| {
-                                all_course_students
-                                    .iter()
-                                    .find(|student| student.info.id == *student_id)
-                                    .map(|student| student.info.clone())
-                            })
-                            .collect()
-                    });
-
-                    if students_info.is_empty() {
-                        // Se está vazio significa que não é por grupo. Inclui o estudante com user_id
-                        if let Some(student) = all_course_students
-                            .iter()
-                            .find(|student| student.info.id == user_id)
-                        {
-                            students_info.push(student.info.clone());
-                        } else {
-                            panic!("Falha ao associar um estudante a uma submissão.");
-                        }
-                    }
-
-                    return Some(Submission {
-                        id: j["id"].as_u64().unwrap(),
-                        assignment_id: j["assignment_id"].as_u64().unwrap(),
-                        score: j["score"].as_f64(),
-                        submitted_at: j["submitted_at"]
-                            .as_str()
-                            .map(|s| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)),
-                        submission_type: j["submission_type"].as_str().map(|st| match st {
-                            "online_upload" => SubmissionType::OnlineUpload,
-                            "online_text_entry" => SubmissionType::OnlineTextEntry,
-                            "online_url" => SubmissionType::OnlineUrl,
-                            "media_recording" => SubmissionType::MediaRecording,
-                            "none" => SubmissionType::None,
-                            _ => SubmissionType::Other,
-                        }),
-                        // student_info: student.info.clone(),
-                        students_info,
-                        file_ids,
-                        assignment_info,
-                        comments,
-                    });
-                }
-            }
-        }
-        None
     }
 
     pub fn download_rubric(&self) -> Option<RubricDownloaded> {
@@ -355,10 +254,10 @@ impl Assignment {
         match submissions_value
             .iter()
             .filter_map(|j| {
-                Assignment::convert_json_to_submission(
+                Submission::convert_json_to_submission(
                     &all_students_value,
                     j,
-                    self.info.clone(),
+                    &self.info.clone(),
                     &groups,
                 )
             })

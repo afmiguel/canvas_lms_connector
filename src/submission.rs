@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::error::Error;
 // Import necessary crates and modules
-use crate::{canvas, AssignmentInfo, Course, StudentInfo};
+use crate::{canvas, AssignmentInfo, Course, Student, StudentInfo};
 use chrono::{DateTime, Duration, Utc};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::Arc;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,41 +38,6 @@ impl SubmissionType {
         }
     }
 }
-
-/// Structure representing a student's submission for an assignment in the Canvas Learning Management System.
-///
-/// This struct provides a detailed view of a student's submission, capturing key aspects like the submission's ID,
-/// the associated assignment ID, the score (if already graded), and the timestamp of submission. It also includes
-/// a reference to the `StudentInfo` struct to establish a direct link to the student who made the submission.
-///
-/// Fields:
-/// - `id`: Unique identifier for the submission within the Canvas system.
-/// - `assignment_id`: Identifier of the assignment this submission is related to.
-/// - `score`: Optional field that contains the score if the submission has been graded.
-/// - `submitted_at`: Optional field indicating the date and time when the submission was made, using UTC timezone.
-/// - `student`: Thread-safe shared reference (`Arc`) to `StudentInfo`, which contains data about the student.
-///
-/// The use of `Arc<StudentInfo>` is crucial for concurrent access and efficient memory management when the same student's
-/// information is accessed from multiple points in the program. This struct is essential for functionalities that involve
-/// tracking and assessing student performance, especially in digital learning environments like Canvas.
-///
-/// Examples of related functions include `fetch_submissions_for_assignments` and `fetch_assignments_and_latest_submissions`,
-/// which likely utilize this struct to represent and handle student submissions.
-/// Enum representing the type of submission.
-// #[derive(Serialize, Deserialize, Debug, Clone)]
-// pub struct Submission {
-//     pub id: u64,                                 // Submission's unique identifier
-//     pub assignment_id: u64,                      // Assignment's unique identifier
-//     pub score: Option<f64>,                      // Graded score, optional
-//     pub submitted_at: Option<DateTime<Utc>>,     // Submission timestamp, optional
-//     pub submission_type: Option<SubmissionType>, // Tipo de submissão, agora tratado como Option
-//     #[serde(skip)]
-//     pub student_info: Arc<StudentInfo>,
-//     #[serde(skip)]
-//     pub assignment_info: Arc<AssignmentInfo>,
-//     #[serde(skip)]
-//     pub file_ids: Vec<u64>, // IDs dos arquivos associados
-// }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Comment {
@@ -316,5 +283,105 @@ impl Submission {
             student_info.id,                               // ID do estudante
             comment_id,                                    // ID do comentário a ser deletado
         )
+    }
+
+    /// Função que converte o JSON de submissões em uma estrutura `Submission`.
+    pub(crate) fn convert_json_to_submission(
+        all_course_students: &Vec<Student>,
+        j: &Value,
+        assignment_info: &Arc<AssignmentInfo>,
+        groups: &Option<HashMap<u64, Vec<u64>>>,
+    ) -> Option<Submission> {
+        for student in all_course_students {
+            if let Some(user_id) = j["user_id"].as_u64() {
+                if student.info.id == user_id {
+                    let file_ids = j["attachments"]
+                        .as_array()
+                        .map_or(Vec::new(), |attachments| {
+                            attachments
+                                .iter()
+                                .filter_map(|attachment| attachment["id"].as_u64())
+                                .collect()
+                        });
+
+                    // Processa os comentários da submissão
+                    let comments =
+                        j["submission_comments"]
+                            .as_array()
+                            .map_or(Vec::new(), |comments_array| {
+                                comments_array
+                                    .iter()
+                                    .filter_map(|comment| {
+                                        // Captura o ID e o conteúdo do comentário
+                                        let id = comment["id"].as_u64();
+                                        let content = comment["comment"].as_str().map(String::from);
+
+                                        // Se ambos o ID e o conteúdo do comentário existirem
+                                        if let (Some(id), Some(content)) = (id, content) {
+                                            Some(Comment { id, content })
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .collect()
+                            });
+
+                    // Localiza o grupo do estudante
+                    let group_id = groups.as_ref().and_then(|groups| {
+                        groups
+                            .iter()
+                            .find(|(_, students)| students.contains(&student.info.id))
+                    });
+
+                    // Se achou um group_id, cria um vetor Vec<StudentInfo> com os estudantes do grupo
+                    let mut students_info = group_id.map_or(Vec::new(), |(_, student_ids)| {
+                        student_ids
+                            .iter()
+                            .filter_map(|student_id| {
+                                all_course_students
+                                    .iter()
+                                    .find(|student| student.info.id == *student_id)
+                                    .map(|student| student.info.clone())
+                            })
+                            .collect()
+                    });
+
+                    if students_info.is_empty() {
+                        // Se está vazio significa que não é por grupo. Inclui o estudante com user_id
+                        if let Some(student) = all_course_students
+                            .iter()
+                            .find(|student| student.info.id == user_id)
+                        {
+                            students_info.push(student.info.clone());
+                        } else {
+                            panic!("Falha ao associar um estudante a uma submissão.");
+                        }
+                    }
+
+                    return Some(Submission {
+                        id: j["id"].as_u64().unwrap(),
+                        assignment_id: j["assignment_id"].as_u64().unwrap(),
+                        score: j["score"].as_f64(),
+                        submitted_at: j["submitted_at"]
+                            .as_str()
+                            .map(|s| DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)),
+                        submission_type: j["submission_type"].as_str().map(|st| match st {
+                            "online_upload" => SubmissionType::OnlineUpload,
+                            "online_text_entry" => SubmissionType::OnlineTextEntry,
+                            "online_url" => SubmissionType::OnlineUrl,
+                            "media_recording" => SubmissionType::MediaRecording,
+                            "none" => SubmissionType::None,
+                            _ => SubmissionType::Other,
+                        }),
+                        // student_info: student.info.clone(),
+                        students_info,
+                        file_ids,
+                        assignment_info: assignment_info.clone(),
+                        comments,
+                    });
+                }
+            }
+        }
+        None
     }
 }

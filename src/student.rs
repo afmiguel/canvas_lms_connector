@@ -70,7 +70,7 @@ impl Student {
     ///   or an error encapsulating any issues encountered during the API call.
     pub fn fetch_submissions_for_assignments<F>(
         &self,
-        assignment_ids: &[u64],
+        assignments_info: &Vec<Arc<AssignmentInfo>>,
         interaction: F,
     ) -> Result<Vec<Submission>, Box<dyn std::error::Error>>
     where
@@ -78,9 +78,9 @@ impl Student {
     {
         canvas::fetch_submissions_for_assignments(
             self.info.course_info.canvas_info.as_ref(),
-            self.info.course_info.id,
-            self.info.id,
-            assignment_ids,
+            &self.info,
+            &self.info.course_info.fetch_students()?,
+            assignments_info,
             interaction,
         )
     }
@@ -109,12 +109,12 @@ impl Student {
     where
         F: Fn(),
     {
-        let assignment_ids: Vec<u64> = assignments
-            .iter()
-            .map(|assignment| assignment.info.id)
-            .collect();
+        let mut assignments_info: Vec<Arc<AssignmentInfo>> = Vec::new();
+        for assignment in assignments.iter() {
+            assignments_info.push(assignment.info.clone());
+        }
 
-        let submissions = self.fetch_submissions_for_assignments(&assignment_ids, interaction)?;
+        let submissions = self.fetch_submissions_for_assignments(&assignments_info, interaction)?;
 
         let mut association: HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)> =
             HashMap::new();
