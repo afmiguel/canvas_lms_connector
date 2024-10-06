@@ -324,7 +324,6 @@ impl Course {
 
     pub fn comment_with_binary_file(
         &self,
-        client: &Client,
         assignment_id: u64,
         student_id: u64,
         file_name: Option<&str>,
@@ -332,7 +331,7 @@ impl Course {
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
         let result = canvas::comment_with_binary_file(
-            client,
+            &self.info.canvas_info.client,
             &self.info.canvas_info,
             self.info.id,
             assignment_id,
