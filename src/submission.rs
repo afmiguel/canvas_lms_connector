@@ -74,7 +74,7 @@ impl SubmissionType {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Comment {
-    pub id: u64,        // ID do comentário
+    pub id: u64,         // ID do comentário
     pub content: String, // Conteúdo do comentário
 }
 
@@ -93,10 +93,8 @@ pub struct Submission {
     pub assignment_info: Arc<AssignmentInfo>,
     #[serde(skip)]
     pub file_ids: Vec<u64>, // IDs dos arquivos associados
-    pub comments: Vec<Comment>,  // Lista de comentários, agora incluindo o ID do comentário
+    pub comments: Vec<Comment>, // Lista de comentários, agora incluindo o ID do comentário
 }
-
-
 
 impl Submission {
     /// Checks if the submission is late by comparing `submitted_at` with `due_at`.
@@ -179,11 +177,10 @@ impl Submission {
         file_path: Option<&str>,
         comment_text: &str,
     ) -> Result<(), Box<dyn Error>> {
-
         // Pega o primeiro estudante da lista
-        let student_info = match self.students_info.first(){
+        let student_info = match self.students_info.first() {
             Some(student_info) => student_info,
-            None => return Err("No student info found".into())
+            None => return Err("No student info found".into()),
         };
 
         let course = Course {
@@ -213,32 +210,24 @@ impl Submission {
     ///
     /// Example:
     /// ```
-    /// let client = reqwest::blocking::Client::new();
     /// let course = Course { /* ... */ };
-    /// match course.update_assignment_score(&client, assignment_id, student_id, new_score) {
+    /// match course.update_assignment_score(assignment_id, student_id, new_score) {
     ///     Ok(_) => /* handle success */,
     ///     Err(e) => /* handle error */,
     /// }
     /// ```
-    pub fn update_score(
-        &mut self,
-        client: &Client,
-        new_score: Option<f64>,
-    ) -> Result<(), Box<dyn Error>> {
-
+    pub fn update_score(&mut self, new_score: Option<f64>) -> Result<(), Box<dyn Error>> {
         // Pega o primeiro estudante da lista
-        let student_info = match self.students_info.first(){
+        let student_info = match self.students_info.first() {
             Some(student_info) => student_info,
-            None => return Err("No student info found".into())
+            None => return Err("No student info found".into()),
         };
-
 
         let course = Course {
             info: student_info.course_info.clone(),
         };
 
-        let ret =
-            course.update_assignment_score(client, self.assignment_id, student_info.id, new_score);
+        let ret = course.update_assignment_score(self.assignment_id, student_info.id, new_score);
         self.score = new_score;
         ret
     }
@@ -263,7 +252,6 @@ impl Submission {
     /// ```
     pub fn download_submission_files(
         &self,
-        client: &Client,
         output_dir: &str,
     ) -> Result<Option<Vec<String>>, Box<dyn std::error::Error>> {
         // Cria o diretório de saída, se não existir
@@ -273,16 +261,16 @@ impl Submission {
         let mut downloaded_files = Vec::new();
 
         // Pega o primeiro estudante da lista
-        let student_info = match self.students_info.first(){
+        let student_info = match self.students_info.first() {
             Some(student_info) => student_info,
-            None => return Err("No student info found".into())
+            None => return Err("No student info found".into()),
         };
 
         // Itera sobre os IDs dos arquivos e faz o download de cada um
         for &file_id in &self.file_ids {
             // Faz o download do arquivo e obtém o caminho completo onde foi salvo
             let file_path = canvas::download_file(
-                client,
+                &student_info.course_info.canvas_info.client,
                 &student_info.course_info.canvas_info, // Passa as credenciais do Canvas
                 file_id,
                 output_dir, // Caminho onde o arquivo será salvo
@@ -313,26 +301,20 @@ impl Submission {
     ///
     /// # Retorno
     /// Retorna `Ok(())` em caso de sucesso ou um `Err(Box<dyn Error>)` em caso de falha.
-    pub fn delete_comment(
-        &self,
-        comment_id: u64,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let client = &reqwest::blocking::Client::new();
-
+    pub fn delete_comment(&self, comment_id: u64) -> Result<(), Box<dyn std::error::Error>> {
         // Pega o primeiro estudante da lista
-        let student_info = match self.students_info.first(){
+        let student_info = match self.students_info.first() {
             Some(student_info) => student_info,
-            None => return Err("No student info found".into())
+            None => return Err("No student info found".into()),
         };
 
         // Chama a função delete_comment já implementada em canvas.rs
         canvas::delete_comment(
-            client,
             &self.assignment_info.course_info.canvas_info, // Credenciais do Canvas
             self.assignment_info.course_info.id,           // ID do curso
             self.assignment_id,                            // ID da tarefa (assignment_id)
-            student_info.id,                          // ID do estudante
-            comment_id                                     // ID do comentário a ser deletado
+            student_info.id,                               // ID do estudante
+            comment_id,                                    // ID do comentário a ser deletado
         )
     }
 }

@@ -18,16 +18,18 @@ use std::process::exit;
 ///     token_canvas: "your_api_token".to_string(),
 /// };
 /// ```
-#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct CanvasCredentials {
     pub url_canvas: String,
     pub token_canvas: String,
+    #[serde(skip)]
+    pub client: reqwest::blocking::Client,
 }
 
 // Enum to represent the source of Canvas credentials.
 enum CanvasCredentialType {
-    None,                      // No credentials available
-    EnvVariables(CanvasCredentials),   // Credentials loaded from a file
+    None,                             // No credentials available
+    EnvVariables(CanvasCredentials),  // Credentials loaded from a file
     SystemKeyring(CanvasCredentials), // Credentials loaded from system's keyring
 }
 
@@ -86,8 +88,9 @@ impl CanvasCredentials {
                         Ok(CanvasCredentials {
                             url_canvas: url,
                             token_canvas: token,
+                            client: reqwest::blocking::Client::new(),
                         })
-                    },
+                    }
                     Err(_) => Err("Error retrieving token from environment".to_string()),
                 },
                 Err(_) => Err("Error retrieving URL from environment".to_string()),
@@ -115,6 +118,7 @@ impl CanvasCredentials {
                                 Ok(token) => Ok(CanvasCredentials {
                                     url_canvas: url,
                                     token_canvas: token,
+                                    client: reqwest::blocking::Client::new(),
                                 }),
                                 Err(_) => Err("Error retrieving token from system".to_string()),
                             },
@@ -198,6 +202,7 @@ impl CanvasCredentials {
                     return CanvasCredentialType::SystemKeyring(CanvasCredentials {
                         url_canvas: url,
                         token_canvas: token,
+                        client: reqwest::blocking::Client::new(),
                     });
                 }
                 Err(status_code) if status_code == 401 || status_code == 403 => {
@@ -232,7 +237,8 @@ impl CanvasCredentials {
                     }
                 }
             }
-            CanvasCredentialType::EnvVariables(credentials) | CanvasCredentialType::SystemKeyring(credentials) => {
+            CanvasCredentialType::EnvVariables(credentials)
+            | CanvasCredentialType::SystemKeyring(credentials) => {
                 // If credentials are found, validate them
                 match Self::test_canvas_credentials(
                     &credentials.url_canvas,
@@ -261,6 +267,7 @@ mod tests {
         let credentials = CanvasCredentials {
             url_canvas: url,
             token_canvas: token,
+            client: reqwest::blocking::Client::new(),
         };
 
         assert_eq!(credentials.url_canvas, "https://example.com");

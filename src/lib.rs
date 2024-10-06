@@ -142,13 +142,11 @@ mod tests {
             url_canvas: "https://pucpr.beta.instructure.com/api/v1".to_string(),
             token_canvas: "20746~JhvKCm9LGeQ7zf4yKXn3YmPvtK6LFrayT2La9VNZ2vE8QHWHBWQJxcFHY6xKBYeh"
                 .to_string(),
+            client: Client::new(),
         };
 
-        // Initialize the HTTP client
-        let client = Client::new();
-
         // Call the function that creates the rubric
-        match create_rubric(&client, &credentials, 43689, &rubric) {
+        match create_rubric(&credentials, 43689, &rubric) {
             Ok(_) => println!("Rubric created successfully!"),
             Err(e) => panic!("Error creating rubric: {}", e),
         }

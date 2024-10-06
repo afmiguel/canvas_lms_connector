@@ -88,21 +88,21 @@ impl CourseInfo {
     pub fn fetch_students(&self) -> Result<Vec<Student>, Box<dyn Error>> {
         {
             let students_cache = self.students_cache.lock().unwrap();
-            if !students_cache.is_empty(){
+            if !students_cache.is_empty() {
                 return Ok(students_cache.clone());
             }
         }
-        match canvas::fetch_students(self){
+        match canvas::fetch_students(self) {
             Ok(students) => {
                 let mut students_cache = self.students_cache.lock().unwrap();
                 students_cache.extend(students.clone());
                 Ok(students_cache.to_vec())
-            },
-            Err(e) => Err(e)
+            }
+            Err(e) => Err(e),
         }
     }
 
-    pub fn clear_cache(&self){
+    pub fn clear_cache(&self) {
         let mut students_cache = self.students_cache.lock().unwrap();
         students_cache.clear();
         let mut assignments_cache = self.assignments_cache.lock().unwrap();
@@ -138,7 +138,7 @@ impl Course {
         self.info.fetch_students()
     }
 
-    pub fn clear_cache(&self){
+    pub fn clear_cache(&self) {
         self.info.clear_cache();
     }
 
@@ -162,17 +162,17 @@ impl Course {
     pub fn fetch_assignments(&self) -> Result<Vec<Assignment>, Box<dyn Error>> {
         {
             let assignments_cache = self.info.assignments_cache.lock().unwrap();
-            if !assignments_cache.is_empty(){
+            if !assignments_cache.is_empty() {
                 return Ok(assignments_cache.clone());
             }
         }
-        match canvas::fetch_assignments(self){
+        match canvas::fetch_assignments(self) {
             Ok(assignments) => {
                 let mut assignments_cache = self.info.assignments_cache.lock().unwrap();
                 assignments_cache.extend(assignments.clone());
                 Ok(assignments_cache.to_vec())
-            },
-            Err(e) => Err(e)
+            }
+            Err(e) => Err(e),
         }
     }
 
@@ -258,13 +258,11 @@ impl Course {
     /// ```
     pub fn update_assignment_score(
         &self,
-        client: &Client,
         assignment_id: u64,
         student_id: u64,
         new_score: Option<f64>,
     ) -> Result<(), Box<dyn Error>> {
         let result = canvas::update_assignment_score(
-            client,
             &self.info.canvas_info,
             self.info.id,
             assignment_id,
@@ -347,34 +345,20 @@ impl Course {
             self.clear_cache();
         }
         result
-
     }
 
-    pub fn create_assignment(
-        &self,
-        client: &Client,
-        assignment_name: &str,
-    ) -> Result<(), Box<dyn Error>> {
-        let result = canvas::create_assignment(
-            client,
-            &self.info.canvas_info,
-            self.info.id,
-            assignment_name,
-        );
+    pub fn create_assignment(&self, assignment_name: &str) -> Result<(), Box<dyn Error>> {
+        let result =
+            canvas::create_assignment(&self.info.canvas_info, self.info.id, assignment_name);
         if result.is_ok() {
             self.clear_cache();
         }
         result
-
     }
 
-    pub fn create_announcement(
-        &self,
-        client: &Client,
-        title: &str,
-        message: &str,
-    ) -> Result<(), Box<dyn Error>> {
-        let result = canvas::create_announcement(client, &self.info.canvas_info, self.info.id, title, message);
+    pub fn create_announcement(&self, title: &str, message: &str) -> Result<(), Box<dyn Error>> {
+        let result =
+            canvas::create_announcement(&self.info.canvas_info, self.info.id, title, message);
         if result.is_ok() {
             self.clear_cache();
         }
@@ -468,7 +452,10 @@ impl Course {
         let assignments = self.fetch_assignments()?;
 
         // Try to find the assignment with the given ID
-        match assignments.into_iter().find(|assignment| assignment.info.id == id) {
+        match assignments
+            .into_iter()
+            .find(|assignment| assignment.info.id == id)
+        {
             Some(assignment) => Ok(assignment), // Assignment found
             None => Err(format!("Assignment with id {} not found", id).into()), // Assignment not found
         }

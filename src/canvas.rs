@@ -108,8 +108,8 @@ impl Canvas {
         let url = format!("{}/courses", info.url_canvas);
         let mut all_courses = Vec::new();
         let mut page = 1;
-        let client = &Client::new();
-
+        // let client = &Client::new();
+        //
         loop {
             let params = vec![
                 (
@@ -119,7 +119,7 @@ impl Canvas {
                 ("page".to_string(), page.to_string()),
                 ("per_page".to_string(), "100".to_string()),
             ];
-            match send_http_request(&client, HttpMethod::Get, &url, &info, params) {
+            match send_http_request(HttpMethod::Get, &url, &info, params) {
                 Ok(response) => {
                     if response.status().is_success() {
                         match response.text() {
@@ -203,7 +203,6 @@ impl Canvas {
         let url = format!("{}/courses/{}", info.url_canvas, course_id);
 
         match send_http_request(
-            &Client::new(),
             HttpMethod::Get,
             &url,
             info,
@@ -374,7 +373,6 @@ pub fn get_current_year_and_semester() -> (String, String) {
 /// }
 /// ```
 fn add_comment(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: &str,
@@ -397,7 +395,7 @@ fn add_comment(
         body["comment"]["file_ids"] = serde_json::json!(file_ids);
     }
 
-    send_http_request(client, HttpMethod::Put(body), &url, &canvas_info, vec![])
+    send_http_request(HttpMethod::Put(body), &url, &canvas_info, vec![])
         .map_err(|e| format!("Failed to add comment: {}", e))?;
     Ok(())
 }
@@ -428,7 +426,6 @@ fn add_comment(
 /// }
 /// ```
 pub fn request_upload_token(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: &str,
@@ -450,7 +447,6 @@ pub fn request_upload_token(
 
     // Enviando a solicitação HTTP
     match send_http_request(
-        client,
         HttpMethod::Post(body), // Usar a variante HttpMethod::Post com corpo JSON
         &url,
         &canvas_info,
@@ -537,7 +533,6 @@ fn upload_file(
     let file_size = std::fs::metadata(file_path)?.len();
 
     match request_upload_token(
-        client,
         canvas_info,
         course_id,
         assignment_id,
@@ -639,7 +634,6 @@ pub fn comment_with_file(
     };
 
     add_comment(
-        client,
         canvas_info,
         course_id,
         &assignment_id_str,
@@ -677,7 +671,6 @@ pub fn comment_with_file(
 /// }
 /// ```
 pub fn get_all_submissions(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: u64,
@@ -706,7 +699,6 @@ pub fn get_all_submissions(
         converted_params.push(("include[]".to_string(), "submission_comments".to_string()));
 
         match send_http_request(
-            client,
             HttpMethod::Get,
             &url,
             canvas_info,
@@ -743,7 +735,6 @@ pub fn get_all_submissions(
 
 /// Função para buscar as submissões de um estudante para várias tarefas e carregar os file_ids.
 pub fn fetch_submissions_for_assignments<F>(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     user_id: u64,
@@ -766,8 +757,7 @@ where
         interaction();
 
         for attempt in 0..SYNC_ATTEMPT {
-            let response =
-                send_http_request(client, HttpMethod::Get, &url, canvas_info, params.clone());
+            let response = send_http_request(HttpMethod::Get, &url, canvas_info, params.clone());
 
             match response {
                 Ok(response) => {
@@ -852,7 +842,6 @@ pub fn fetch_students(course_info: &CourseInfo) -> Result<Vec<Student>, Box<dyn 
 
     let mut all_students = Vec::new();
     let mut page = 1;
-    let client = &Client::new();
 
     loop {
         let params = vec![
@@ -870,7 +859,6 @@ pub fn fetch_students(course_info: &CourseInfo) -> Result<Vec<Student>, Box<dyn 
 
         // Passando HttpMethod::Get ao invés de "GET"
         match send_http_request(
-            client,
             HttpMethod::Get, // Supondo que HttpMethod::Get é um enum definido em algum lugar
             &url,
             &course_info.canvas_info,
@@ -882,11 +870,9 @@ pub fn fetch_students(course_info: &CourseInfo) -> Result<Vec<Student>, Box<dyn 
                     if students_page.is_empty() {
                         break; // Sai do loop se não há mais estudantes
                     }
-                    all_students.extend(
-                        students_page
-                            .into_iter()
-                            .filter_map(|student| convert_json_to_student(course_info.clone(), &student)),
-                    );
+                    all_students.extend(students_page.into_iter().filter_map(|student| {
+                        convert_json_to_student(course_info.clone(), &student)
+                    }));
                     page += 1; // Incrementa o número da página para a próxima iteração
                 } else {
                     return Err(Box::new(std::io::Error::new(
@@ -923,7 +909,11 @@ pub fn convert_json_to_assignment(
     // Verifica se existe a data de vencimento (due_at) e a parseia se disponível
     let due_at = assignment["due_at"]
         .as_str()
-        .map(|due_str| DateTime::parse_from_rfc3339(due_str).ok().map(|dt| dt.with_timezone(&Utc)))
+        .map(|due_str| {
+            DateTime::parse_from_rfc3339(due_str)
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc))
+        })
         .flatten(); // Transforma o Result em Option e remove erros de parsing
 
     // Verifica se o assignment está configurado para submissões em grupo e extrai o group_category_id
@@ -934,14 +924,13 @@ pub fn convert_json_to_assignment(
             id,
             name,
             description,
-            rubric_id,                            // Armazena o ID da rubrica
-            due_at,                               // Adiciona o campo due_at (opcional)
+            rubric_id, // Armazena o ID da rubrica
+            due_at,    // Adiciona o campo due_at (opcional)
             group_category_id,
             course_info: Arc::clone(course_info), // Mantém a referência ao CourseInfo
         }),
     })
 }
-
 
 pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Error>> {
     let url = format!(
@@ -951,7 +940,6 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
 
     let mut all_assignments = Vec::new();
     let mut page = 1;
-    let client = &reqwest::blocking::Client::new();
     loop {
         let params = vec![("page", page.to_string()), ("per_page", "100".to_string())];
 
@@ -961,7 +949,6 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
             .collect();
 
         match send_http_request(
-            client,
             HttpMethod::Get,
             &url,
             &course.info.canvas_info,
@@ -995,19 +982,10 @@ pub fn fetch_assignments(course: &Course) -> Result<Vec<Assignment>, Box<dyn Err
             }
         }
     }
-    // // Passa por todas os assignments e verifica se existe rubrica
-    // for assignment in &all_assignments {
-    //     if let Some(rubric_id) = assignment.info.rubric_id {
-    //         if let Ok(r) = download_rubric(client, &course.info.canvas_info, course.info.id, rubric_id){
-    //             println!("Rubric da atividade {}: {}",assignment.info.name , r);
-    //         }
-    //     }
-    // }
     Ok(all_assignments)
 }
 
 pub fn update_assignment_score(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: u64,
@@ -1038,7 +1016,6 @@ pub fn update_assignment_score(
     let mut attempt = SYNC_ATTEMPT;
     loop {
         match send_http_request(
-            client,
             HttpMethod::Put(body.clone()), // Use HttpMethod::Put enum variant
             &url,
             &canvas_info,
@@ -1114,7 +1091,6 @@ pub fn comment_with_binary_file(
     };
 
     add_comment(
-        client,
         canvas_info,
         course_id,
         &assignment_id_str,
@@ -1139,7 +1115,6 @@ fn upload_binary_file(
     let file_size = file_content.len() as u64;
 
     match request_upload_token(
-        client,
         canvas_info,
         course_id,
         assignment_id,
@@ -1203,7 +1178,6 @@ fn upload_binary_file(
 /// }
 /// ```
 pub fn create_assignment(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_name: &str,
@@ -1223,7 +1197,7 @@ pub fn create_assignment(
         }
     });
 
-    match send_http_request(client, HttpMethod::Post(body), &url, canvas_info, vec![]) {
+    match send_http_request(HttpMethod::Post(body), &url, canvas_info, vec![]) {
         Ok(response) => {
             if response.status().is_success() {
                 println!("Atividade '{}' criada com sucesso!", assignment_name);
@@ -1243,7 +1217,6 @@ pub fn create_assignment(
 }
 
 pub fn create_announcement(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     title: &str,
@@ -1260,7 +1233,7 @@ pub fn create_announcement(
         "is_announcement": true
     });
 
-    match send_http_request(client, HttpMethod::Post(body), &url, canvas_info, vec![]) {
+    match send_http_request(HttpMethod::Post(body), &url, canvas_info, vec![]) {
         Ok(response) => {
             if response.status().is_success() {
                 Ok(())
@@ -1281,11 +1254,11 @@ pub fn create_announcement(
     }
 }
 
+use crate::rubric_submission::CanvasRubricSubmission;
+use chrono::{DateTime, Utc};
 use std::fs::File;
 use std::io::Write;
 use std::time::Duration;
-use chrono::{DateTime, Utc};
-use crate::rubric_submission::CanvasRubricSubmission;
 
 /// Downloads a file from the Canvas LMS.
 ///
@@ -1311,7 +1284,6 @@ pub fn download_file(
 
     // First, make the request to get the file metadata
     let response = send_http_request(
-        client,
         HttpMethod::Get, // GET method to retrieve metadata
         &metadata_url,
         canvas_info,
@@ -1371,7 +1343,6 @@ pub fn download_file(
 }
 
 pub fn download_rubric(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     rubric_id: u64,
@@ -1386,7 +1357,7 @@ pub fn download_rubric(
     let params = Vec::new();
 
     // Realiza a requisição HTTP
-    match send_http_request(client, HttpMethod::Get, &url, canvas_info, params) {
+    match send_http_request(HttpMethod::Get, &url, canvas_info, params) {
         Ok(response) => {
             if response.status().is_success() {
                 // Parseia o JSON retornado pela resposta
@@ -1411,10 +1382,9 @@ pub fn download_rubric(
 
 /// Função para criar uma rubrica no Canvas LMS.
 pub fn create_rubric(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
-    rubric: &CanvasRubricSubmission,  // Using CanvasRubricSubmission instead of Rubric
+    rubric: &CanvasRubricSubmission, // Using CanvasRubricSubmission instead of Rubric
 ) -> Result<(), Box<dyn Error>> {
     // URL for the API to create the rubric
     let url = format!("{}/courses/{}/rubrics", canvas_info.url_canvas, course_id);
@@ -1451,11 +1421,10 @@ pub fn create_rubric(
 
     // Sending the POST request using send_http_request
     let response = send_http_request(
-        client,
-        HttpMethod::Post(rubric_data),  // Sending the JSON body with the POST request
+        HttpMethod::Post(rubric_data), // Sending the JSON body with the POST request
         &url,
         canvas_info,
-        vec![],  // No additional parameters
+        vec![], // No additional parameters
     )?;
 
     // Checking if the response was successful
@@ -1491,7 +1460,6 @@ pub fn create_rubric(
 ///
 /// Retorna um `Result<(), Box<dyn Error>>` que indica sucesso ou falha na operação.
 pub fn delete_comment(
-    client: &Client,
     canvas_info: &CanvasCredentials,
     course_id: u64,
     assignment_id: u64,
@@ -1506,11 +1474,10 @@ pub fn delete_comment(
 
     // Chamar send_http_request usando o método DELETE
     let response = send_http_request(
-        client,
-        HttpMethod::Delete,  // Usando o novo método DELETE
+        HttpMethod::Delete, // Usando o novo método DELETE
         &url,
         canvas_info,
-        vec![],  // Nenhum parâmetro adicional necessário
+        vec![], // Nenhum parâmetro adicional necessário
     )?;
 
     // Verifica se a requisição foi bem-sucedida
@@ -1525,18 +1492,19 @@ pub fn delete_comment(
 }
 
 fn fetch_groups_for_category(
-    client: &reqwest::blocking::Client,
     group_category_id: u64,
     canvas_info: &CanvasCredentials,
 ) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
-    let url = format!("{}/group_categories/{}/groups", canvas_info.url_canvas, group_category_id);
-    let response = send_http_request(client, HttpMethod::Get, &url, canvas_info, vec![])?;
+    let url = format!(
+        "{}/group_categories/{}/groups",
+        canvas_info.url_canvas, group_category_id
+    );
+    let response = send_http_request(HttpMethod::Get, &url, canvas_info, vec![])?;
     let groups: Vec<serde_json::Value> = response.json()?;
     Ok(groups)
 }
 
 pub fn fetch_groups_for_assignment(
-    client: &reqwest::blocking::Client,
     assignment_info: &AssignmentInfo,
     canvas_info: &CanvasCredentials,
 ) -> Result<HashMap<u64, Vec<u64>>, Box<dyn std::error::Error>> {
@@ -1545,13 +1513,14 @@ pub fn fetch_groups_for_assignment(
     // Verificar se o assignment possui um `group_category_id`
     if let Some(group_category_id) = assignment_info.group_category_id {
         // Obter os grupos da categoria de grupo
-        let groups = fetch_groups_for_category(client, group_category_id, canvas_info)?;
+        let groups = fetch_groups_for_category(group_category_id, canvas_info)?;
 
         // Itera sobre os grupos e busca os estudantes de cada grupo
         for group in groups {
             if let Some(group_id) = group["id"].as_u64() {
                 let group_url = format!("{}/groups/{}/users", canvas_info.url_canvas, group_id);
-                let group_response = send_http_request(client, HttpMethod::Get, &group_url, canvas_info, vec![])?;
+                let group_response =
+                    send_http_request(HttpMethod::Get, &group_url, canvas_info, vec![])?;
                 let users: Vec<serde_json::Value> = group_response.json()?;
 
                 // Coleta os IDs dos estudantes para o grupo
@@ -1575,4 +1544,3 @@ pub fn fetch_groups_for_assignment(
 
     Ok(group_student_map)
 }
-

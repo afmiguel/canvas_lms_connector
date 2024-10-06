@@ -5,9 +5,9 @@ use crate::{canvas, CourseInfo, Student};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 /// Structure to hold detailed information about an assignment in the Canvas system.
 ///
@@ -58,10 +58,7 @@ impl Assignment {
         &self,
         students: &Vec<Student>,
     ) -> Result<Vec<Submission>, Box<dyn std::error::Error>> {
-        let client = &reqwest::blocking::Client::new();
-
         let groups = match canvas::fetch_groups_for_assignment(
-            client,
             self.info.as_ref(),
             self.info.course_info.canvas_info.as_ref(),
         ) {
@@ -72,13 +69,10 @@ impl Assignment {
                     Some(groups)
                 }
             }
-            Err(_) => {
-                None
-            }
+            Err(_) => None,
         };
 
         match canvas::get_all_submissions(
-            client,
             self.info.course_info.canvas_info.as_ref(),
             self.info.course_info.id,
             self.info.id,
@@ -91,7 +85,12 @@ impl Assignment {
                 let submissions = submissions_value
                     .iter()
                     .filter_map(|j| {
-                        Assignment::convert_json_to_submission(&all_course_students, j, self.info.clone(), &groups)
+                        Assignment::convert_json_to_submission(
+                            &all_course_students,
+                            j,
+                            self.info.clone(),
+                            &groups,
+                        )
                     })
                     .collect::<Vec<_>>();
 
@@ -99,11 +98,11 @@ impl Assignment {
                 let submissions = submissions
                     .into_iter()
                     .filter(|submission| {
-                        submission.students_info.iter().any(|si| {
-                            students.iter().any(|student| student.info.id == si.id)
-                        })
-                    }
-                    )
+                        submission
+                            .students_info
+                            .iter()
+                            .any(|si| students.iter().any(|student| student.info.id == si.id))
+                    })
                     .collect::<Vec<_>>();
 
                 // println!("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
@@ -167,7 +166,9 @@ impl Assignment {
 
                     // Localiza o grupo do estudante
                     let group_id = groups.as_ref().and_then(|groups| {
-                        groups.iter().find(|(_, students)| students.contains(&student.info.id))
+                        groups
+                            .iter()
+                            .find(|(_, students)| students.contains(&student.info.id))
                     });
 
                     // Se achou um group_id, cria um vetor Vec<StudentInfo> com os estudantes do grupo
@@ -185,7 +186,10 @@ impl Assignment {
 
                     if students_info.is_empty() {
                         // Se está vazio significa que não é por grupo. Inclui o estudante com user_id
-                        if let Some(student) = all_course_students.iter().find(|student| student.info.id == user_id) {
+                        if let Some(student) = all_course_students
+                            .iter()
+                            .find(|student| student.info.id == user_id)
+                        {
                             students_info.push(student.info.clone());
                         } else {
                             panic!("Falha ao associar um estudante a uma submissão.");
@@ -220,11 +224,8 @@ impl Assignment {
     }
 
     pub fn download_rubric(&self) -> Option<RubricDownloaded> {
-        let client = &reqwest::blocking::Client::new();
-
         if let Some(rubric_id) = self.info.rubric_id {
             match canvas::download_rubric(
-                &client,
                 self.info.course_info.canvas_info.as_ref(),
                 self.info.course_info.id,
                 rubric_id,
@@ -297,7 +298,6 @@ impl Assignment {
         mut cache: Option<&mut GetSubmissionFromSubmissionIdCache>,
     ) -> Result<Submission, Box<dyn Error>> {
         // Fetch all submissions for the assignment
-        let client = &reqwest::blocking::Client::new();
 
         // Variáveis para submissões e estudantes
         let submissions_value: Vec<Value>;
@@ -309,7 +309,6 @@ impl Assignment {
                 submissions_value = submissions.clone(); // Usa submissões do cache
             } else {
                 submissions_value = canvas::get_all_submissions(
-                    client,
                     self.info.course_info.canvas_info.as_ref(),
                     self.info.course_info.id,
                     self.info.id,
@@ -319,7 +318,6 @@ impl Assignment {
             }
         } else {
             submissions_value = canvas::get_all_submissions(
-                client,
                 self.info.course_info.canvas_info.as_ref(),
                 self.info.course_info.id,
                 self.info.id,
@@ -340,7 +338,6 @@ impl Assignment {
         }
 
         let groups = match canvas::fetch_groups_for_assignment(
-            client,
             self.info.as_ref(),
             self.info.course_info.canvas_info.as_ref(),
         ) {
@@ -351,16 +348,19 @@ impl Assignment {
                     Some(groups)
                 }
             }
-            Err(_) => {
-                None
-            }
+            Err(_) => None,
         };
 
         // Tentar encontrar a submissão com o ID fornecido
         match submissions_value
             .iter()
             .filter_map(|j| {
-                Assignment::convert_json_to_submission(&all_students_value, j, self.info.clone(), &groups)
+                Assignment::convert_json_to_submission(
+                    &all_students_value,
+                    j,
+                    self.info.clone(),
+                    &groups,
+                )
             })
             .find(|submission| submission.id == submission_id)
         {
@@ -386,10 +386,8 @@ impl Assignment {
         student_id: u64,
         comment_id: u64,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let client = &reqwest::blocking::Client::new();
         // Chama a função delete_comment já implementada em canvas.rs
         canvas::delete_comment(
-            client,
             &self.info.course_info.canvas_info, // Credenciais do Canvas
             self.info.course_info.id,           // ID do curso
             self.info.id,                       // ID da tarefa (assignment_id)

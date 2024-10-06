@@ -1,11 +1,11 @@
 // Import necessary crates and modules
+use crate::assignment::{Assignment, AssignmentInfo};
+use crate::canvas;
+use crate::submission::Submission;
+use crate::CourseInfo;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
-use crate::CourseInfo;
-use crate::assignment::{Assignment, AssignmentInfo};
-use crate::submission::Submission;
-use crate::canvas;
 
 /// Structure for storing and managing student data in the Canvas system.
 ///
@@ -70,7 +70,6 @@ impl Student {
     ///   or an error encapsulating any issues encountered during the API call.
     pub fn fetch_submissions_for_assignments<F>(
         &self,
-        client: &reqwest::blocking::Client,
         assignment_ids: &[u64],
         interaction: F,
     ) -> Result<Vec<Submission>, Box<dyn std::error::Error>>
@@ -78,12 +77,12 @@ impl Student {
         F: Fn(),
     {
         canvas::fetch_submissions_for_assignments(
-            client,
             self.info.course_info.canvas_info.as_ref(),
             self.info.course_info.id,
             self.info.id,
             assignment_ids,
-            interaction)
+            interaction,
+        )
     }
 
     /// Retrieves assignments and their latest submissions for the student.
@@ -104,7 +103,6 @@ impl Student {
     ///   containing a map of assignment IDs to tuples of `AssignmentInfo` and the latest `Submission`, or an error.
     pub fn fetch_assignments_and_latest_submissions<F>(
         &self,
-        client: &reqwest::blocking::Client,
         assignments: Arc<Vec<Assignment>>,
         interaction: F,
     ) -> Result<HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)>, Box<dyn std::error::Error>>
@@ -116,8 +114,7 @@ impl Student {
             .map(|assignment| assignment.info.id)
             .collect();
 
-        let submissions =
-            self.fetch_submissions_for_assignments(client, &assignment_ids, interaction)?;
+        let submissions = self.fetch_submissions_for_assignments(&assignment_ids, interaction)?;
 
         let mut association: HashMap<u64, (Arc<AssignmentInfo>, Option<Submission>)> =
             HashMap::new();
